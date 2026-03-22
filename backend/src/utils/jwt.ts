@@ -8,11 +8,15 @@ type AccessPayload = {
 };
 
 export const signAccessToken = (payload: AccessPayload): string => {
-  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
+  return jwt.sign(payload, env.JWT_SECRET, {
+    expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn']
+  });
 };
 
 export const signRefreshToken = (payload: AccessPayload): string => {
-  return jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: env.JWT_REFRESH_EXPIRES_IN });
+  return jwt.sign(payload, env.JWT_REFRESH_SECRET, {
+    expiresIn: env.JWT_REFRESH_EXPIRES_IN as jwt.SignOptions['expiresIn']
+  });
 };
 
 export const verifyAccessToken = (token: string): AccessPayload => {
