@@ -4,21 +4,23 @@ import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/
 
 export class AuthService {
   async register(email: string, password: string) {
-    const exists = await prisma.user.findUnique({ where: { email } });
+    const normalizedEmail = this.normalizeEmail(email);
+    const exists = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (exists) {
       throw new Error('User already exists');
     }
 
     const passwordHash = await hashPassword(password);
     const user = await prisma.user.create({
-      data: { email, passwordHash }
+      data: { email: normalizedEmail, passwordHash }
     });
 
     return this.issueTokens({ userId: user.id, role: user.role, email: user.email });
   }
 
   async login(email: string, password: string) {
-    const user = await prisma.user.findUnique({ where: { email } });
+    const normalizedEmail = this.normalizeEmail(email);
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (!user) {
       throw new Error('Invalid credentials');
     }
@@ -42,6 +44,10 @@ export class AuthService {
       refreshToken: signRefreshToken(payload),
       user: payload
     };
+  }
+
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
   }
 }
 

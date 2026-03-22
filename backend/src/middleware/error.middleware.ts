@@ -8,6 +8,11 @@ export const errorHandler = (error: unknown, _req: Request, res: Response, _next
   }
 
   if (error instanceof Error) {
+    if (error.message === 'Invalid credentials') {
+      res.status(401).json({ error: error.message });
+      return;
+    }
+
     res.status(500).json({ error: error.message });
     return;
   }
