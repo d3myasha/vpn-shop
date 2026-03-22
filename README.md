@@ -4,13 +4,15 @@ MVP fullstack-магазин подписок VPN с интеграциями:
 - Backend: Node.js + Express + TypeScript + Prisma + PostgreSQL
 - Frontend: React + Vite + TypeScript
 - Платежи: YooKassa (есть mock-режим, если ключи не заполнены)
-- VPN-панель: Remnawave (подключается через API ключ)
+- VPN-панель: Remnawave (на текущем этапе можно не подключать)
+- Reverse proxy + HTTPS: Caddy
 
 ## Структура
 
 - `backend/` API, бизнес-логика и Prisma
 - `frontend/` клиентское приложение
-- `docker-compose.yml` локальный запуск PostgreSQL + Redis + backend + frontend
+- `docker-compose.yml` запуск PostgreSQL + Redis + backend + frontend + caddy
+- `caddy/Caddyfile` домен и HTTPS
 
 ## Быстрый старт
 
@@ -19,19 +21,31 @@ MVP fullstack-магазин подписок VPN с интеграциями:
 cp .env.example .env
 ```
 
-2. Запустить сервисы:
+2. Заполнить `.env`:
+- `DOMAIN=ваш_домен`
+- `APP_URL=https://ваш_домен`
+- `CORS_ORIGIN=https://ваш_домен`
+- `ADMIN_EMAIL/ADMIN_PASSWORD` для входа в админку
+
+3. Проверить DNS:
+- `A` запись домена должна указывать на IP сервера.
+- Порты `80` и `443` должны быть открыты.
+
+4. Запустить сервисы:
 ```bash
 docker compose up --build
 ```
 
-3. Инициализация БД выполняется автоматически при старте backend:
+5. Инициализация БД выполняется автоматически при старте backend:
 - `prisma generate`
 - `prisma db push`
 - `prisma seed`
 
-4. Открыть:
-- Frontend: `http://localhost:5173`
-- Backend healthcheck: `http://localhost:3000/health`
+6. Открыть:
+- Сайт: `https://ваш_домен`
+- Healthcheck API: `https://ваш_домен/health`
+
+Примечание: Caddy проксирует `/api/*` в backend, а остальные запросы — во frontend.
 
 ## Реализовано в MVP
 
@@ -62,7 +76,7 @@ docker compose up --build
 
 ## Что дальше
 
-1. Добавить полноценную валидацию подписи webhook YooKassa.
-2. Подключить очередь (BullMQ + Redis) для фонового создания подписок в Remnawave.
-3. Расширить frontend до отдельных страниц (`Dashboard`, `Payment`, `Admin`).
+1. Подключить Remnawave API и выдачу реальных конфигов.
+2. Добавить полноценную валидацию подписи webhook YooKassa.
+3. Подключить очередь (BullMQ + Redis) для фонового создания подписок.
 4. Добавить unit/integration/e2e тесты.

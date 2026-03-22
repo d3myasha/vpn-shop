@@ -14,6 +14,7 @@ RUN npx prisma generate
 
 COPY src ./src
 COPY tsconfig.json ./
+RUN npm run build
 
 EXPOSE 3000
-CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "start"]
