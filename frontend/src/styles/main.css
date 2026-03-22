@@ -1,0 +1,83 @@
+:root {
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  color: #f4f7ff;
+  background: radial-gradient(circle at top left, #2e4b8f, #0e1728 55%, #090f1a 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.layout {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  gap: 20px;
+}
+
+.header h1 {
+  margin-bottom: 6px;
+}
+
+.card {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(8, 19, 35, 0.7);
+  border-radius: 14px;
+  padding: 16px;
+  backdrop-filter: blur(8px);
+}
+
+.auth-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+input,
+button {
+  border-radius: 10px;
+  border: none;
+  padding: 10px 12px;
+  font-size: 15px;
+}
+
+button {
+  background: linear-gradient(120deg, #3ac1e4, #4a86ff);
+  color: #f7fcff;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.price {
+  font-size: 26px;
+  margin: 8px 0;
+}
+
+.error {
+  color: #ffb4b4;
+}
+
+.subscription {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 10px;
+  padding: 10px;
+  overflow: auto;
+}
