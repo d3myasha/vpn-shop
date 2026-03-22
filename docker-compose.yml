@@ -31,6 +31,7 @@ services:
     depends_on:
       - postgres
       - redis
+    command: sh -c "npm run prisma:generate && npm run prisma:push && npm run prisma:seed && npm run dev"
     volumes:
       - ./backend:/app
       - /app/node_modules

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { Role } from '@prisma/client';
-import { planController, createPlanSchema } from '../controllers/plan.controller.js';
+import { planController, createPlanSchema, updatePlanSchema } from '../controllers/plan.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 import { validateBody } from '../middleware/validate.middleware.js';
 
@@ -16,6 +16,14 @@ router.get('/admin', requireAuth, requireRole([Role.admin]), (req, res, next) =>
 
 router.post('/admin', requireAuth, requireRole([Role.admin]), validateBody(createPlanSchema), (req, res, next) => {
   planController.create(req, res).catch(next);
+});
+
+router.patch('/admin/:id', requireAuth, requireRole([Role.admin]), validateBody(updatePlanSchema), (req, res, next) => {
+  planController.update(req, res).catch(next);
+});
+
+router.delete('/admin/:id', requireAuth, requireRole([Role.admin]), (req, res, next) => {
+  planController.remove(req, res).catch(next);
 });
 
 export default router;

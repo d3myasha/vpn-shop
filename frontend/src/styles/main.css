@@ -39,6 +39,12 @@ body {
   gap: 12px;
 }
 
+.tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 label {
   display: grid;
   gap: 6px;
@@ -80,4 +86,25 @@ button {
   border-radius: 10px;
   padding: 10px;
   overflow: auto;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.admin-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 8px;
+}
+
+.search-row {
+  display: flex;
+  gap: 8px;
 }

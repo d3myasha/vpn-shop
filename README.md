@@ -24,10 +24,10 @@ cp .env.example .env
 docker compose up --build
 ```
 
-3. Применить Prisma-миграции (в отдельном терминале):
-```bash
-docker compose exec backend npm run prisma:migrate -- --name init
-```
+3. Инициализация БД выполняется автоматически при старте backend:
+- `prisma generate`
+- `prisma db push`
+- `prisma seed`
 
 4. Открыть:
 - Frontend: `http://localhost:5173`
@@ -52,9 +52,13 @@ docker compose exec backend npm run prisma:migrate -- --name init
 - `GET /api/plans`
 - `GET /api/plans/admin` (admin)
 - `POST /api/plans/admin` (admin)
+- `PATCH /api/plans/admin/:id` (admin)
+- `DELETE /api/plans/admin/:id` (admin)
 - `POST /api/subscriptions/create` (auth)
 - `GET /api/subscriptions/me` (auth)
 - `POST /api/webhooks/yookassa`
+- `GET /api/admin/stats` (admin)
+- `GET /api/admin/users` (admin)
 
 ## Что дальше
 

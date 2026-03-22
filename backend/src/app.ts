@@ -8,7 +8,9 @@ import authRoutes from './routes/auth.routes.js';
 import planRoutes from './routes/plan.routes.js';
 import subscriptionRoutes from './routes/subscription.routes.js';
 import webhookRoutes from './routes/webhook.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 import { errorHandler } from './middleware/error.middleware.js';
+import { prisma } from './config/prisma.js';
 
 export const app = express();
 
@@ -28,13 +30,19 @@ app.use(
   })
 );
 
-app.get('/health', (_req, res) => {
-  res.status(200).json({ status: 'ok', service: 'd3MVpn Shop API' });
+app.get('/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({ status: 'ok', db: 'ok', service: 'd3MVpn Shop API' });
+  } catch {
+    res.status(503).json({ status: 'error', db: 'unavailable' });
+  }
 });
 
 app.use('/api/auth', authRoutes);
 app.use('/api/plans', planRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use(errorHandler);

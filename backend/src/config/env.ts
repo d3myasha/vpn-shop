@@ -18,7 +18,9 @@ const envSchema = z.object({
   YOOKASSA_SECRET_KEY: z.string().optional(),
   YOOKASSA_RETURN_URL: z.string().url().default('http://localhost:5173/payment/success'),
   YOOKASSA_WEBHOOK_SECRET: z.string().optional(),
-  CORS_ORIGIN: z.string().url().default('http://localhost:5173')
+  CORS_ORIGIN: z.string().url().default('http://localhost:5173'),
+  ADMIN_EMAIL: z.string().email().optional(),
+  ADMIN_PASSWORD: z.string().min(8).optional()
 });
 
 export const env = envSchema.parse(process.env);
