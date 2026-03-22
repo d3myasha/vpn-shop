@@ -30,6 +30,9 @@ services:
       - postgres
       - redis
     command: sh -c "npm run prisma:generate && npm run prisma:push && npm run prisma:seed && npm run start"
+    networks:
+      - default
+      - edge
 
   frontend:
     build:
@@ -38,25 +41,14 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
-
-  caddy:
-    image: caddy:2.8-alpine
-    container_name: d3mvpn-caddy
-    restart: unless-stopped
-    env_file:
-      - ./.env
-    depends_on:
-      - frontend
-      - backend
-    ports:
-      - '80:80'
-      - '443:443'
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+    networks:
+      - default
+      - edge
 
 volumes:
   postgres_data:
-  caddy_data:
-  caddy_config:
+
+networks:
+  edge:
+    name: vpn-shop-edge
+    external: true

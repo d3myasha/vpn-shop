@@ -11,7 +11,8 @@ MVP fullstack-магазин подписок VPN с интеграциями:
 
 - `backend/` API, бизнес-логика и Prisma
 - `frontend/` клиентское приложение
-- `docker-compose.yml` запуск PostgreSQL + Redis + backend + frontend + caddy
+- `docker-compose.yml` запуск PostgreSQL + Redis + backend + frontend
+- `caddy/docker-compose.yml` отдельный запуск Caddy
 - `caddy/Caddyfile` домен и HTTPS
 
 ## Быстрый старт
@@ -31,17 +32,27 @@ cp .env.example .env
 - `A` запись домена должна указывать на IP сервера.
 - Порты `80` и `443` должны быть открыты.
 
-4. Запустить сервисы:
+4. Создать внешнюю сеть (один раз):
 ```bash
-docker compose up --build
+docker network create vpn-shop-edge
 ```
 
-5. Инициализация БД выполняется автоматически при старте backend:
+5. Запустить приложение:
+```bash
+docker compose up --build -d
+```
+
+6. Запустить Caddy отдельно:
+```bash
+docker compose -f caddy/docker-compose.yml up -d
+```
+
+7. Инициализация БД выполняется автоматически при старте backend:
 - `prisma generate`
 - `prisma db push`
 - `prisma seed`
 
-6. Открыть:
+8. Открыть:
 - Сайт: `https://ваш_домен`
 - Healthcheck API: `https://ваш_домен/health`
 

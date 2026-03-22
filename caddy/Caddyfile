@@ -2,12 +2,12 @@
   encode gzip zstd
 
   handle /health {
-    reverse_proxy backend:3000
+    reverse_proxy d3mvpn-backend:3000
   }
 
   handle /api/* {
-    reverse_proxy backend:3000
+    reverse_proxy d3mvpn-backend:3000
   }
 
-  reverse_proxy frontend:4173
+  reverse_proxy d3mvpn-frontend:4173
 }
