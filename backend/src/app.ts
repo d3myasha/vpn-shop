@@ -14,6 +14,9 @@ import { prisma } from './config/prisma.js';
 
 export const app = express();
 
+// Backend runs behind Caddy and receives X-Forwarded-* headers.
+app.set('trust proxy', 1);
+
 app.use(
   cors({
     origin: env.CORS_ORIGIN,
