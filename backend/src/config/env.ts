@@ -19,6 +19,7 @@ const envSchema = z.object({
   YOOKASSA_RETURN_URL: z.string().url().optional(),
   YOOKASSA_WEBHOOK_SECRET: z.string().optional(),
   CORS_ORIGIN: z.string().url().default('http://localhost:5173'),
+  AUTH_COOKIE_DOMAIN: z.string().optional(),
   ADMIN_EMAIL: z.string().email().optional(),
   ADMIN_PASSWORD: z.string().min(8).optional()
 });

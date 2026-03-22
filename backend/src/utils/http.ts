@@ -1,10 +1,12 @@
 import type { Response } from 'express';
+import { env } from '../config/env.js';
 
 const cookieBaseConfig = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax' as const,
-  path: '/'
+  path: '/',
+  domain: env.AUTH_COOKIE_DOMAIN
 };
 
 export const setAuthCookies = (res: Response, accessToken: string, refreshToken: string): void => {

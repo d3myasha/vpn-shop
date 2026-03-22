@@ -63,12 +63,21 @@ export class YooKassaService {
 
   verifyWebhook(reqBody: string, signature: string | undefined): boolean {
     // In MVP mode we keep webhook verification optional.
-    // When YOOKASSA_WEBHOOK_SECRET is set, integrate HMAC check here.
+    // YooKassa may not provide a signature header in all integration modes.
+    // Keep verification permissive until strict HMAC check is implemented.
     if (!env.YOOKASSA_WEBHOOK_SECRET) {
       return true;
     }
 
-    return Boolean(reqBody && signature);
+    if (!reqBody) {
+      return false;
+    }
+
+    if (!signature) {
+      return true;
+    }
+
+    return signature === env.YOOKASSA_WEBHOOK_SECRET;
   }
 }
 

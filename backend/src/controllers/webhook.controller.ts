@@ -47,6 +47,8 @@ export class WebhookController {
     }
 
     await subscriptionService.activateSubscriptionAfterPayment(subscriptionId, paymentId);
+    // eslint-disable-next-line no-console
+    console.log(`YooKassa webhook processed: payment=${paymentId}, subscription=${subscriptionId}`);
     res.status(200).json({ ok: true });
   }
 }
