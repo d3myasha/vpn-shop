@@ -1,5 +1,15 @@
 const API_URL = import.meta.env.VITE_API_URL ?? '/api';
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 export type Plan = {
   id: string;
   name: string;
@@ -10,14 +20,59 @@ export type Plan = {
   remnawaveTemplateUuid?: string;
   sortOrder?: number;
   isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type UserPayload = { userId: string; email: string; role: 'user' | 'admin' };
 
+export type SubscriptionStatus = 'pending' | 'active' | 'expired' | 'cancelled';
+
+export type SubscriptionResponse = {
+  id: string;
+  status: SubscriptionStatus;
+  startDate: string | null;
+  endDate: string | null;
+  trafficLimitGb: number | null;
+  createdAt: string;
+  paymentId: string | null;
+  plan: Plan;
+  connectionConfig?: unknown;
+};
+
+export type AdminStats = {
+  totalUsers: number;
+  activeSubscriptions: number;
+  totalRevenueKopeks: number;
+  lifetimeRevenueKopeks: number;
+};
+
+export type AdminUser = {
+  id: string;
+  email: string;
+  role: string;
+  createdAt: string;
+  telegramId?: string | null;
+  subscriptions?: Array<{
+    id: string;
+    status: SubscriptionStatus;
+    createdAt: string;
+    endDate: string | null;
+    plan?: {
+      id: string;
+      name: string;
+      priceKopeks: number;
+    };
+  }>;
+};
+
 const withJson = async <T>(response: Response): Promise<T> => {
-  const data = await response.json();
+  const text = await response.text();
+  const data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+
   if (!response.ok) {
-    throw new Error(data.error ?? 'Request failed');
+    const message = typeof data.error === 'string' ? data.error : 'Request failed';
+    throw new ApiError(message, response.status);
   }
 
   return data as T;
@@ -64,7 +119,7 @@ export const api = {
   },
   async mySubscription() {
     const response = await fetch(`${API_URL}/subscriptions/me`, { credentials: 'include' });
-    return withJson<Record<string, unknown>>(response);
+    return withJson<SubscriptionResponse>(response);
   },
   async adminPlans() {
     const response = await fetch(`${API_URL}/plans/admin`, { credentials: 'include' });
@@ -97,15 +152,10 @@ export const api = {
   },
   async adminStats() {
     const response = await fetch(`${API_URL}/admin/stats`, { credentials: 'include' });
-    return withJson<{
-      totalUsers: number;
-      activeSubscriptions: number;
-      totalRevenueKopeks: number;
-      lifetimeRevenueKopeks: number;
-    }>(response);
+    return withJson<AdminStats>(response);
   },
   async adminUsers(query = '') {
     const response = await fetch(`${API_URL}/admin/users?q=${encodeURIComponent(query)}`, { credentials: 'include' });
-    return withJson<{ items: Array<{ id: string; email: string; role: string; createdAt: string }> }>(response);
+    return withJson<{ items: AdminUser[] }>(response);
   }
 };
