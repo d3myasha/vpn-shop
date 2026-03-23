@@ -30,7 +30,16 @@ export default function App() {
   }
 
   return (
-    <AppLayout user={user} onLogout={() => setUser(null)}>
+    <AppLayout
+      user={user}
+      onLogout={async () => {
+        try {
+          await api.logout();
+        } finally {
+          setUser(null);
+        }
+      }}
+    >
       <Routes>
         <Route path="/auth" element={<AuthPage user={user} onAuthSuccess={setUser} />} />
         <Route path="/plans" element={<PlansPage user={user} />} />

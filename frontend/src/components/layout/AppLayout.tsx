@@ -5,7 +5,7 @@ import { Button } from '../ui/Button';
 
 type Props = PropsWithChildren<{
   user: UserPayload | null;
-  onLogout: () => void;
+  onLogout: () => Promise<void> | void;
 }>;
 
 export function AppLayout({ user, onLogout, children }: Props) {

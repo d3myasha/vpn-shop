@@ -104,6 +104,13 @@ export const api = {
     });
     return withJson<{ user: UserPayload }>(response);
   },
+  async logout() {
+    const response = await fetch(`${API_URL}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+    return withJson<{ ok: boolean }>(response);
+  },
   async plans() {
     const response = await fetch(`${API_URL}/plans`, { credentials: 'include' });
     return withJson<{ items: Plan[] }>(response);
