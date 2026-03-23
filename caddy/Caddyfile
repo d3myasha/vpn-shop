@@ -9,5 +9,5 @@
     reverse_proxy d3mvpn-backend:3000
   }
 
-  reverse_proxy d3mvpn-frontend:4173
+  reverse_proxy d3mvpn-frontend:3000
 }

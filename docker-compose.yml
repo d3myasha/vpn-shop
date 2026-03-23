@@ -36,9 +36,12 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: ./frontend-new
+      dockerfile: Dockerfile
     container_name: d3mvpn-frontend
     restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=/api
     depends_on:
       - backend
     networks:

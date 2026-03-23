@@ -2,7 +2,7 @@
 
 MVP fullstack-магазин подписок VPN с интеграциями:
 - Backend: Node.js + Express + TypeScript + Prisma + PostgreSQL
-- Frontend: React + Vite + TypeScript
+- Frontend: Next.js 14 + React + TypeScript + Tailwind
 - Платежи: YooKassa (есть mock-режим, если ключи не заполнены)
 - VPN-панель: Remnawave (на текущем этапе можно не подключать)
 - Reverse proxy + HTTPS: Caddy
@@ -10,8 +10,9 @@ MVP fullstack-магазин подписок VPN с интеграциями:
 ## Структура
 
 - `backend/` API, бизнес-логика и Prisma
-- `frontend/` клиентское приложение
-- `docker-compose.yml` запуск PostgreSQL + Redis + backend + frontend
+- `frontend-new/` клиентское приложение (основной фронтенд)
+- `frontend/` legacy-фронтенд на Vite (оставлен как референс)
+- `docker-compose.yml` запуск PostgreSQL + Redis + backend + frontend (из `frontend-new/`)
 - `caddy/docker-compose.yml` отдельный запуск Caddy
 - `caddy/Caddyfile` домен и HTTPS
 
@@ -57,6 +58,7 @@ docker compose -f caddy/docker-compose.yml up -d
 - Healthcheck API: `https://ваш_домен/health`
 
 Примечание: Caddy проксирует `/api/*` в backend, а остальные запросы — во frontend.
+Для текущей конфигурации frontend работает на порту `3000` внутри контейнера (Next.js).
 
 ## Реализовано в MVP
 
