@@ -1,7 +1,7 @@
 import type { HTMLAttributes } from 'react';
 
 type Props = HTMLAttributes<HTMLElement> & {
-  as?: 'article' | 'section' | 'div';
+  as?: 'article' | 'section' | 'div' | 'aside';
   glass?: boolean;
 };
 
