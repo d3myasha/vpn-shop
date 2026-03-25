@@ -109,6 +109,8 @@ Caddy автоматически получит и продлит TLS-серти
    - `YOOKASSA_WEBHOOK_RATE_LIMIT_RPM="60"`
 3. Для distributed rate-limit укажите Redis:
    - `REDIS_URL="redis://redis:6379"`
+4. Если нужно временно отключить проверку trusted IP:
+   - `YOOKASSA_WEBHOOK_IP_ALLOWLIST_ENABLED="false"`
 
 По актуальной документации YooKassa, базовая аутентификация webhook строится на:
 1. проверке источника (IP allowlist),

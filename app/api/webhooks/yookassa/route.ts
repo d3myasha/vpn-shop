@@ -31,11 +31,14 @@ export async function POST(request: NextRequest) {
   try {
     const env = getEnv();
     const sourceIp = getRequestIp(request.headers);
+    const ipAllowlistEnabled = process.env.YOOKASSA_WEBHOOK_IP_ALLOWLIST_ENABLED !== "false";
 
-    assertIpAllowed({
-      ip: sourceIp,
-      allowedRaw: process.env.YOOKASSA_WEBHOOK_ALLOWED_IPS ?? ""
-    });
+    if (ipAllowlistEnabled) {
+      assertIpAllowed({
+        ip: sourceIp,
+        allowedRaw: process.env.YOOKASSA_WEBHOOK_ALLOWED_IPS ?? ""
+      });
+    }
 
     await assertRateLimit({
       key: `yookassa:${sourceIp || "unknown"}`,
