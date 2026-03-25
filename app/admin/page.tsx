@@ -832,24 +832,32 @@ function PlanGroupForm({
 
         <label style={labelStyle}>
           Internal Squad
-          <input
-            name="internalSquadUuid"
-            defaultValue={initial?.internalSquadUuid ?? ""}
-            list="internal-squads-list"
-            placeholder="UUID internal squad"
-            style={inputStyle}
-          />
+          <select name="internalSquadUuid" defaultValue={initial?.internalSquadUuid ?? ""} style={inputStyle}>
+            <option value="">Не выбрано</option>
+            {initial?.internalSquadUuid && !internalSquads.some((squad) => squad.uuid === initial.internalSquadUuid) ? (
+              <option value={initial.internalSquadUuid}>{`Текущий (вне списка): ${initial.internalSquadUuid}`}</option>
+            ) : null}
+            {internalSquads.map((squad) => (
+              <option key={squad.uuid} value={squad.uuid}>
+                {squad.name}
+              </option>
+            ))}
+          </select>
         </label>
 
         <label style={labelStyle}>
           External Squad
-          <input
-            name="externalSquadUuid"
-            defaultValue={initial?.externalSquadUuid ?? ""}
-            list="external-squads-list"
-            placeholder="UUID external squad"
-            style={inputStyle}
-          />
+          <select name="externalSquadUuid" defaultValue={initial?.externalSquadUuid ?? ""} style={inputStyle}>
+            <option value="">Не выбрано</option>
+            {initial?.externalSquadUuid && !externalSquads.some((squad) => squad.uuid === initial.externalSquadUuid) ? (
+              <option value={initial.externalSquadUuid}>{`Текущий (вне списка): ${initial.externalSquadUuid}`}</option>
+            ) : null}
+            {externalSquads.map((squad) => (
+              <option key={squad.uuid} value={squad.uuid}>
+                {squad.name}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
 
@@ -868,21 +876,6 @@ function PlanGroupForm({
           style={inputStyle}
         />
       </label>
-
-      <datalist id="internal-squads-list">
-        {internalSquads.map((squad) => (
-          <option key={squad.uuid} value={squad.uuid}>
-            {squad.name}
-          </option>
-        ))}
-      </datalist>
-      <datalist id="external-squads-list">
-        {externalSquads.map((squad) => (
-          <option key={squad.uuid} value={squad.uuid}>
-            {squad.name}
-          </option>
-        ))}
-      </datalist>
 
       <label style={{ ...labelStyle, flexDirection: "row", alignItems: "center", gap: 8 }}>
         <input name="isActive" type="checkbox" defaultChecked={initial?.isActive ?? true} />
