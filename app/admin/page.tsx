@@ -263,15 +263,54 @@ export default async function AdminPage() {
       throw new Error("Нет прав для управления тарифами.");
     }
 
-    const groupCode = String(formData.get("groupCode") ?? "").trim().toLowerCase();
+    const planIdsRaw = String(formData.get("planIds") ?? "").trim();
     const nextIsActive = String(formData.get("nextIsActive") ?? "").toLowerCase() === "true";
-    if (!groupCode) {
-      throw new Error("Не передан код группы.");
+    const planIds = planIdsRaw
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    if (planIds.length === 0) {
+      throw new Error("Не переданы planIds группы.");
     }
 
     await prisma.plan.updateMany({
-      where: { code: { startsWith: `${groupCode}_` } },
+      where: { id: { in: planIds } },
       data: { isActive: nextIsActive }
+    });
+
+    revalidatePath("/admin");
+    revalidatePath("/");
+  }
+
+  async function deletePlanGroupAction(formData: FormData) {
+    "use server";
+
+    const actor = await auth();
+    if (!actor?.user || (actor.user.role !== "OWNER" && actor.user.role !== "ADMIN")) {
+      throw new Error("Нет прав для удаления тарифов.");
+    }
+
+    const planIdsRaw = String(formData.get("planIds") ?? "").trim();
+    const planIds = planIdsRaw
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+
+    if (planIds.length === 0) {
+      throw new Error("Не переданы planIds группы.");
+    }
+
+    // Сначала отключаем группу, затем удаляем только те планы, на которые нет ссылок из Subscription.
+    await prisma.plan.updateMany({
+      where: { id: { in: planIds } },
+      data: { isActive: false }
+    });
+
+    await prisma.plan.deleteMany({
+      where: {
+        id: { in: planIds },
+        subscriptions: { none: {} }
+      }
     });
 
     revalidatePath("/admin");
@@ -446,7 +485,7 @@ export default async function AdminPage() {
       internalSquadUuid: string | null;
       externalSquadUuid: string | null;
       isActive: boolean;
-      options: Array<{ code: string; durationDays: number; priceRub: number; isActive: boolean }>;
+      options: Array<{ id: string; code: string; durationDays: number; priceRub: number; isActive: boolean }>;
     }
   >();
 
@@ -465,12 +504,12 @@ export default async function AdminPage() {
         internalSquadUuid: plan.internalSquadUuid,
         externalSquadUuid: plan.externalSquadUuid,
         isActive: plan.isActive,
-        options: [{ code: plan.code, durationDays: plan.durationDays, priceRub: plan.priceRub, isActive: plan.isActive }]
+        options: [{ id: plan.id, code: plan.code, durationDays: plan.durationDays, priceRub: plan.priceRub, isActive: plan.isActive }]
       });
       continue;
     }
 
-    current.options.push({ code: plan.code, durationDays: plan.durationDays, priceRub: plan.priceRub, isActive: plan.isActive });
+    current.options.push({ id: plan.id, code: plan.code, durationDays: plan.durationDays, priceRub: plan.priceRub, isActive: plan.isActive });
     current.isActive = current.isActive || plan.isActive;
   }
 
@@ -542,7 +581,7 @@ export default async function AdminPage() {
                 </p>
               </div>
               <form action={togglePlanGroupActiveAction}>
-                <input type="hidden" name="groupCode" value={group.groupCode} />
+                <input type="hidden" name="planIds" value={group.options.map((option) => option.id).join(",")} />
                 <input type="hidden" name="nextIsActive" value={String(!group.isActive)} />
                 <button type="submit" style={smallButtonStyle}>
                   {group.isActive ? "Отключить группу" : "Включить группу"}
@@ -553,7 +592,7 @@ export default async function AdminPage() {
             <div style={{ marginTop: 10 }}>
               <PlanGroupForm
                 action={upsertPlanGroupAction}
-                submitLabel="Обновить тариф"
+                formId={`group-form-${group.groupCode}`}
                 initial={{
                   groupCode: group.groupCode,
                   title: group.title,
@@ -565,11 +604,25 @@ export default async function AdminPage() {
                   internalSquadUuid: group.internalSquadUuid,
                   externalSquadUuid: group.externalSquadUuid,
                   isActive: group.isActive,
-                  durationPrices: toDurationPricesText(group.options)
+                  durationPrices: toDurationPricesText(group.options),
+                  planIds: group.options.map((option) => option.id).join(",")
                 }}
                 internalSquads={internalSquads}
                 externalSquads={externalSquads}
               />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button type="submit" form={`group-form-${group.groupCode}`} style={smallButtonStyle}>
+                  Обновить тариф
+                </button>
+                <button
+                  type="submit"
+                  form={`group-form-${group.groupCode}`}
+                  formAction={deletePlanGroupAction}
+                  style={{ ...smallButtonStyle, borderColor: "#ef4444", color: "#b91c1c" }}
+                >
+                  Удалить тариф
+                </button>
+              </div>
             </div>
           </article>
         ))}
@@ -705,12 +758,14 @@ export default async function AdminPage() {
 function PlanGroupForm({
   action,
   submitLabel,
+  formId,
   initial,
   internalSquads,
   externalSquads
 }: {
   action: (formData: FormData) => Promise<void>;
-  submitLabel: string;
+  submitLabel?: string;
+  formId?: string;
   initial?: {
     groupCode: string;
     title: string;
@@ -723,12 +778,14 @@ function PlanGroupForm({
     externalSquadUuid: string | null;
     isActive: boolean;
     durationPrices: string;
+    planIds?: string;
   };
   internalSquads: Array<{ uuid: string; name: string }>;
   externalSquads: Array<{ uuid: string; name: string }>;
 }) {
   return (
-    <form action={action} style={{ display: "grid", gap: 8 }}>
+    <form id={formId} action={action} style={{ display: "grid", gap: 8 }}>
+      {initial?.planIds ? <input type="hidden" name="planIds" value={initial.planIds} /> : null}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 8 }}>
         <label style={labelStyle}>
           Код группы
@@ -831,9 +888,11 @@ function PlanGroupForm({
         Активен
       </label>
 
-      <button type="submit" style={smallButtonStyle}>
-        {submitLabel}
-      </button>
+      {submitLabel ? (
+        <button type="submit" style={smallButtonStyle}>
+          {submitLabel}
+        </button>
+      ) : null}
     </form>
   );
 }
