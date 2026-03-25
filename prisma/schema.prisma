@@ -77,7 +77,7 @@ model Plan {
 
 model Subscription {
   id                    String             @id @default(cuid())
-  userId                String
+  userId                String             @unique
   planId                String
   status                SubscriptionStatus @default(ACTIVE)
   startedAt             DateTime           @default(now())
@@ -93,7 +93,7 @@ model Subscription {
   plan     Plan      @relation(fields: [planId], references: [id], onDelete: Restrict)
   payments Payment[]
 
-  @@index([userId, status])
+  @@index([status])
 }
 
 model Payment {

@@ -8,7 +8,7 @@ export default async function AccountPage() {
     redirect("/login");
   }
 
-  const [user, subscriptions, payments] = await Promise.all([
+  const [user, subscription, payments] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
@@ -17,11 +17,9 @@ export default async function AccountPage() {
         referralCode: true
       }
     }),
-    prisma.subscription.findMany({
+    prisma.subscription.findUnique({
       where: { userId: session.user.id },
       include: { plan: true },
-      orderBy: { createdAt: "desc" },
-      take: 10
     }),
     prisma.payment.findMany({
       where: { userId: session.user.id },
@@ -49,9 +47,9 @@ export default async function AccountPage() {
       </form>
 
       <h2 style={{ marginTop: 26 }}>Подписки</h2>
-      {subscriptions.length === 0 ? <p>Подписок пока нет.</p> : null}
+      {!subscription ? <p>Подписки пока нет.</p> : null}
       <div style={{ display: "grid", gap: 10 }}>
-        {subscriptions.map((subscription) => (
+        {subscription ? (
           <article key={subscription.id} style={cardStyle}>
             <p style={{ margin: 0, fontWeight: 600 }}>{subscription.plan.title}</p>
             <p style={{ margin: "4px 0" }}>Статус: {subscription.status}</p>
@@ -61,7 +59,7 @@ export default async function AccountPage() {
               Ссылка подписки: {subscription.remnawaveSubscription ?? "еще не выдана"}
             </p>
           </article>
-        ))}
+        ) : null}
       </div>
 
       <h2 style={{ marginTop: 26 }}>История платежей</h2>

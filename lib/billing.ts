@@ -58,18 +58,12 @@ async function upsertSubscriptionByPlan(tx: Prisma.TransactionClient, userId: st
     throw new BillingError("План не найден или отключен", 404);
   }
 
-  const latest = await tx.subscription.findFirst({
-    where: {
-      userId,
-      status: {
-        not: SubscriptionStatus.CANCELED
-      }
-    },
-    orderBy: { expiresAt: "desc" }
+  const current = await tx.subscription.findUnique({
+    where: { userId }
   });
 
   const now = new Date();
-  if (!latest) {
+  if (!current) {
     const created = await tx.subscription.create({
       data: {
         userId,
@@ -84,9 +78,9 @@ async function upsertSubscriptionByPlan(tx: Prisma.TransactionClient, userId: st
     return created;
   }
 
-  const anchor = latest.expiresAt > now ? latest.expiresAt : now;
+  const anchor = current.expiresAt > now ? current.expiresAt : now;
   return tx.subscription.update({
-    where: { id: latest.id },
+    where: { id: current.id },
     data: {
       planId: plan.id,
       status: SubscriptionStatus.ACTIVE,
@@ -98,15 +92,7 @@ async function upsertSubscriptionByPlan(tx: Prisma.TransactionClient, userId: st
 }
 
 async function extendUserLatestSubscription(tx: Prisma.TransactionClient, userId: string, days: number) {
-  const latest = await tx.subscription.findFirst({
-    where: {
-      userId,
-      status: {
-        not: SubscriptionStatus.CANCELED
-      }
-    },
-    orderBy: { expiresAt: "desc" }
-  });
+  const latest = await tx.subscription.findUnique({ where: { userId } });
 
   if (!latest) {
     return false;
