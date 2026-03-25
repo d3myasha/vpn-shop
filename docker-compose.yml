@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:18
+    restart: always
+    environment:
+      POSTGRES_DB: vpn_shop
+      POSTGRES_USER: vpn_user
+      POSTGRES_PASSWORD: vpn_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:8-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+
+  app:
+    build: .
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - redis
+
+volumes:
+  postgres_data:

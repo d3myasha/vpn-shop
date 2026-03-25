@@ -1,0 +1,135 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  CUSTOMER
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  CANCELED
+  REFUNDED
+}
+
+enum PlanTier {
+  SIMPLE
+  EXTENDED
+  SUPER
+}
+
+model User {
+  id                  String         @id @default(cuid())
+  email               String         @unique
+  passwordHash        String
+  role                UserRole       @default(CUSTOMER)
+  referralCode        String         @unique
+  referredByUserId    String?
+  referredBy          User?          @relation("UserReferrals", fields: [referredByUserId], references: [id])
+  referrals           User[]         @relation("UserReferrals")
+  subscriptions       Subscription[]
+  payments            Payment[]
+  inviterRewards      ReferralReward[] @relation("InviterRewards")
+  invitedRewards      ReferralReward[] @relation("InvitedRewards")
+  createdPromoCodes   PromoCode[]    @relation("PromoCodeCreator")
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+}
+
+model Plan {
+  id            String         @id @default(cuid())
+  code          String         @unique
+  tier          PlanTier
+  title         String
+  durationDays  Int
+  deviceLimit   Int
+  priceRub      Int
+  isActive      Boolean        @default(true)
+  subscriptions Subscription[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Subscription {
+  id                    String             @id @default(cuid())
+  userId                String
+  planId                String
+  status                SubscriptionStatus @default(ACTIVE)
+  startedAt             DateTime           @default(now())
+  expiresAt             DateTime
+  deviceLimitSnapshot   Int
+  trafficLimitGb        Int?
+  remnawaveProfileId    String?
+  remnawaveSubscription String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan     Plan      @relation(fields: [planId], references: [id], onDelete: Restrict)
+  payments Payment[]
+
+  @@index([userId, status])
+}
+
+model Payment {
+  id                    String        @id @default(cuid())
+  userId                String
+  subscriptionId        String?
+  amountRub             Int
+  status                PaymentStatus @default(PENDING)
+  provider              String        @default("yookassa")
+  providerPaymentId     String?       @unique
+  providerIdempotence   String?       @unique
+  promoCodeId           String?
+  discountRub           Int           @default(0)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  promoCode    PromoCode?    @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+}
+
+model PromoCode {
+  id                 String     @id @default(cuid())
+  code               String     @unique
+  discountPercent    Int?
+  discountRub        Int?
+  maxActivations     Int        @default(1)
+  activationsCount   Int        @default(0)
+  validFrom          DateTime   @default(now())
+  validUntil         DateTime
+  isActive           Boolean    @default(true)
+  createdByUserId    String
+  createdBy          User       @relation("PromoCodeCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  payments           Payment[]
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+}
+
+model ReferralReward {
+  id                     String   @id @default(cuid())
+  inviterUserId          String
+  invitedUserId          String
+  paymentId              String?  @unique
+  inviterBonusDays       Int
+  invitedBonusDays       Int
+  appliedAt              DateTime @default(now())
+
+  inviter User @relation("InviterRewards", fields: [inviterUserId], references: [id], onDelete: Cascade)
+  invited User @relation("InvitedRewards", fields: [invitedUserId], references: [id], onDelete: Cascade)
+}
