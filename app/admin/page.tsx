@@ -301,10 +301,9 @@ export default async function AdminPage() {
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.subscription.deleteMany({
-        where: {
-          planId: { in: planIds }
-        }
+      await tx.subscription.updateMany({
+        where: { planId: { in: planIds } },
+        data: { planId: null }
       });
 
       await tx.plan.deleteMany({
@@ -345,8 +344,8 @@ export default async function AdminPage() {
           deviceLimit: subscription.deviceLimitSnapshot,
           internalSubscriptionId: subscription.id,
           remnawaveProfileId: subscription.remnawaveProfileId,
-          internalSquadUuid: subscription.plan.internalSquadUuid,
-          externalSquadUuid: subscription.plan.externalSquadUuid
+          internalSquadUuid: subscription.plan?.internalSquadUuid ?? null,
+          externalSquadUuid: subscription.plan?.externalSquadUuid ?? null
         });
 
         await prisma.subscription.update({
@@ -623,7 +622,7 @@ export default async function AdminPage() {
                 </button>
               </div>
               <p style={{ margin: "8px 0 0", fontSize: 12, color: "#b91c1c" }}>
-                Удаление безвозвратное: удалит все варианты срока и связанные подписки этого тарифа.
+                Удаление безвозвратное только для шопа: варианты тарифа удаляются, подписки сохраняются (без привязки к плану).
               </p>
             </div>
           </article>

@@ -51,7 +51,7 @@ export default async function AccountPage() {
       <div style={{ display: "grid", gap: 10 }}>
         {subscription ? (
           <article key={subscription.id} style={cardStyle}>
-            <p style={{ margin: 0, fontWeight: 600 }}>{subscription.plan.title}</p>
+            <p style={{ margin: 0, fontWeight: 600 }}>{subscription.plan?.title ?? "IMPORTED / NONE"}</p>
             <p style={{ margin: "4px 0" }}>Статус: {subscription.status}</p>
             <p style={{ margin: "4px 0" }}>До: {new Date(subscription.expiresAt).toLocaleString("ru-RU")}</p>
             <p style={{ margin: "4px 0" }}>Лимит устройств: {subscription.deviceLimitSnapshot}</p>

@@ -116,8 +116,8 @@ export async function POST(request: NextRequest) {
       deviceLimit: subscription.deviceLimitSnapshot,
       internalSubscriptionId: subscription.id,
       remnawaveProfileId: subscription.remnawaveProfileId,
-      internalSquadUuid: subscription.plan.internalSquadUuid,
-      externalSquadUuid: subscription.plan.externalSquadUuid
+      internalSquadUuid: subscription.plan?.internalSquadUuid ?? null,
+      externalSquadUuid: subscription.plan?.externalSquadUuid ?? null
     });
 
     await prisma.subscription.update({
