@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: vpn_user
       POSTGRES_PASSWORD: vpn_pass
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     ports:
       - "5432:5432"
 

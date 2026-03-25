@@ -22,6 +22,7 @@ describe("POST /api/webhooks/yookassa", () => {
     process.env.REMNAWAVE_API_KEY = "key";
     process.env.REMNAWAVE_API_HEADER_NAME = "Authorization";
     process.env.REMNAWAVE_API_HEADER_PREFIX = "Bearer";
+    process.env.YOOKASSA_WEBHOOK_IP_ALLOWLIST_ENABLED = "true";
     process.env.YOOKASSA_WEBHOOK_ALLOWED_IPS = "77.75.156.11";
   });
 
