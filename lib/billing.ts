@@ -1,34 +1,16 @@
 import { Prisma, SubscriptionStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { calculateDiscountRub } from "@/lib/discount";
+import { BillingError } from "@/lib/errors";
 
-export class BillingError extends Error {
-  statusCode: number;
+export { BillingError };
 
-  constructor(message: string, statusCode = 400) {
-    super(message);
-    this.statusCode = statusCode;
+export async function resolveCheckoutUser(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new BillingError("Пользователь не найден", 404);
   }
-}
-
-export async function resolveCheckoutUser(inputUserId?: string) {
-  if (inputUserId) {
-    const user = await prisma.user.findUnique({ where: { id: inputUserId } });
-    if (!user) {
-      throw new BillingError("Пользователь не найден", 404);
-    }
-    return user;
-  }
-
-  // Временный fallback до внедрения полноценной auth-системы.
-  return prisma.user.upsert({
-    where: { email: "demo-customer@vpn.local" },
-    create: {
-      email: "demo-customer@vpn.local",
-      passwordHash: "auth-not-configured",
-      referralCode: "DEMOUSER"
-    },
-    update: {}
-  });
+  return user;
 }
 
 export async function validatePromoCode(rawPromoCode?: string | null) {
@@ -62,19 +44,7 @@ export async function validatePromoCode(rawPromoCode?: string | null) {
   return promo;
 }
 
-export function calculateDiscountRub(amountRub: number, promo: { discountPercent: number | null; discountRub: number | null } | null) {
-  if (!promo) {
-    return 0;
-  }
-
-  if (promo.discountRub && promo.discountRub > 0) {
-    return Math.min(amountRub - 1, promo.discountRub);
-  }
-
-  const percent = Math.min(Math.max(promo.discountPercent ?? 0, 0), 99);
-  const discountByPercent = Math.floor((amountRub * percent) / 100);
-  return Math.min(amountRub - 1, discountByPercent);
-}
+export { calculateDiscountRub };
 
 function addDays(baseDate: Date, days: number) {
   const date = new Date(baseDate);
@@ -173,7 +143,7 @@ export async function activatePaymentAndSubscription(params: {
     }
 
     if (payment.status === "SUCCEEDED") {
-      return { paymentId: payment.id, alreadyProcessed: true };
+      return { paymentId: payment.id, subscriptionId: payment.subscriptionId, alreadyProcessed: true };
     }
 
     if (payment.amountRub !== params.successfulAmountRub) {

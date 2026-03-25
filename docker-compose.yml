@@ -20,13 +20,30 @@ services:
   app:
     build: .
     restart: always
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     env_file:
       - .env
     depends_on:
       - postgres
       - redis
 
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file:
+      - .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:

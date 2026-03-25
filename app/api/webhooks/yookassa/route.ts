@@ -3,6 +3,9 @@ import { getEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { activatePaymentAndSubscription, BillingError } from "@/lib/billing";
 import { getYooKassaPayment } from "@/lib/yookassa";
+import { syncRemnawaveSubscription } from "@/lib/remnawave";
+import { assertIpAllowed, assertRateLimit, getRequestIp } from "@/lib/webhook-security";
+import { logger } from "@/lib/logger";
 
 type YooWebhookPayload = {
   event?: string;
@@ -26,6 +29,19 @@ function toRubInt(value: string | undefined) {
 
 export async function POST(request: NextRequest) {
   try {
+    const env = getEnv();
+    const sourceIp = getRequestIp(request.headers);
+
+    assertIpAllowed({
+      ip: sourceIp,
+      allowedRaw: process.env.YOOKASSA_WEBHOOK_ALLOWED_IPS ?? ""
+    });
+
+    await assertRateLimit({
+      key: `yookassa:${sourceIp || "unknown"}`,
+      limitPerMinute: Number(process.env.YOOKASSA_WEBHOOK_RATE_LIMIT_RPM ?? "60")
+    });
+
     const payload = (await request.json()) as YooWebhookPayload;
     const paymentId = payload?.object?.id;
     if (!paymentId) {
@@ -45,6 +61,7 @@ export async function POST(request: NextRequest) {
         data: { status: "CANCELED" }
       });
 
+      logger.info("yookassa_webhook_canceled", { paymentId, sourceIp });
       return NextResponse.json({ received: true, status: "canceled" });
     }
 
@@ -62,8 +79,7 @@ export async function POST(request: NextRequest) {
     }
 
     const successfulAmountRub = toRubInt(verifiedPayment.amount.value);
-    const env = getEnv();
-    await activatePaymentAndSubscription({
+    const activationResult = await activatePaymentAndSubscription({
       providerPaymentId: paymentId,
       successfulAmountRub,
       planCode,
@@ -71,10 +87,42 @@ export async function POST(request: NextRequest) {
       invitedBonusDays: env.REFERRAL_INVITED_BONUS_DAYS
     });
 
+    if (!activationResult.subscriptionId) {
+      throw new BillingError("Для оплаченного платежа не найдена подписка", 500);
+    }
+
+    const subscription = await prisma.subscription.findUnique({
+      where: { id: activationResult.subscriptionId },
+      include: {
+        user: true
+      }
+    });
+    if (!subscription) {
+      throw new BillingError("Подписка не найдена после проведения платежа", 500);
+    }
+
+    const remnawaveResult = await syncRemnawaveSubscription({
+      email: subscription.user.email,
+      expiresAt: subscription.expiresAt,
+      deviceLimit: subscription.deviceLimitSnapshot,
+      internalSubscriptionId: subscription.id,
+      remnawaveProfileId: subscription.remnawaveProfileId
+    });
+
+    await prisma.subscription.update({
+      where: { id: subscription.id },
+      data: {
+        remnawaveProfileId: remnawaveResult.remnawaveUserUuid,
+        remnawaveSubscription: remnawaveResult.subscriptionUrl
+      }
+    });
+
+    logger.info("yookassa_webhook_succeeded", { paymentId, subscriptionId: subscription.id, sourceIp });
     return NextResponse.json({ received: true, status: "succeeded" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Webhook error";
     const statusCode = error instanceof BillingError ? error.statusCode : 500;
+    logger.error("yookassa_webhook_failed", error, { statusCode, route: "/api/webhooks/yookassa" });
     return NextResponse.json({ error: message }, { status: statusCode });
   }
 }

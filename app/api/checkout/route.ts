@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateDiscountRub, resolveCheckoutUser, validatePromoCode, BillingError } from "@/lib/billing";
 import { createYooKassaPayment } from "@/lib/yookassa";
+import { auth } from "@/auth";
+import { logger } from "@/lib/logger";
 
 type CheckoutInput = {
   planCode?: string;
   promoCode?: string;
-  userId?: string;
   referralCode?: string;
 };
 
@@ -19,7 +20,6 @@ export async function POST(request: NextRequest) {
     input = {
       planCode: String(formData.get("planCode") ?? ""),
       promoCode: String(formData.get("promoCode") ?? ""),
-      userId: String(formData.get("userId") ?? ""),
       referralCode: String(formData.get("referralCode") ?? "")
     };
   } else {
@@ -43,7 +43,15 @@ export async function POST(request: NextRequest) {
       throw new BillingError("План не найден или отключен", 404);
     }
 
-    const user = await resolveCheckoutUser(input.userId);
+    const session = await auth();
+    if (!session?.user?.id) {
+      if (wantsRedirect) {
+        return NextResponse.redirect(new URL("/login", request.url), 303);
+      }
+      return NextResponse.json({ error: "Требуется авторизация" }, { status: 401 });
+    }
+
+    const user = await resolveCheckoutUser(session.user.id);
 
     if (input.referralCode && !user.referredByUserId && input.referralCode !== user.referralCode) {
       const inviter = await prisma.user.findUnique({
@@ -108,6 +116,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Checkout error";
     const statusCode = error instanceof BillingError ? error.statusCode : 500;
+    logger.error("checkout_failed", error, { statusCode, planCode, route: "/api/checkout" });
 
     if (wantsRedirect) {
       return NextResponse.redirect(new URL(`/?error=${encodeURIComponent(message)}`, request.url), 303);

@@ -8,6 +8,8 @@ const envSchema = z.object({
   YOOKASSA_RETURN_URL: z.string().url(),
   REMNAWAVE_API_URL: z.string().url(),
   REMNAWAVE_API_KEY: z.string().min(1),
+  REMNAWAVE_API_HEADER_NAME: z.string().min(1).default("Authorization"),
+  REMNAWAVE_API_HEADER_PREFIX: z.string().optional().default("Bearer"),
   REFERRAL_INVITER_BONUS_DAYS: z.coerce.number().int().positive().default(7),
   REFERRAL_INVITED_BONUS_DAYS: z.coerce.number().int().positive().default(3)
 });
