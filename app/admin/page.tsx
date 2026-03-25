@@ -9,88 +9,6 @@ const ROLE_OPTIONS: UserRole[] = ["CUSTOMER", "ADMIN", "OWNER"];
 const PLAN_TIER_OPTIONS: PlanTier[] = ["SIMPLE", "EXTENDED", "SUPER", "CUSTOM"];
 const PLAN_LIMIT_OPTIONS: PlanLimitType[] = ["DEVICES", "TRAFFIC"];
 
-type ParsedPlanForm = {
-  id?: string;
-  code: string;
-  title: string;
-  description: string | null;
-  tier: PlanTier;
-  limitType: PlanLimitType;
-  durationDays: number;
-  deviceLimit: number;
-  trafficLimitGb: number | null;
-  priceRub: number;
-  internalSquadUuid: string | null;
-  externalSquadUuid: string | null;
-  isActive: boolean;
-};
-
-function parsePlanForm(formData: FormData): ParsedPlanForm {
-  const id = String(formData.get("planId") ?? "").trim();
-  const code = String(formData.get("code") ?? "")
-    .trim()
-    .toLowerCase();
-  const title = String(formData.get("title") ?? "").trim();
-  const descriptionRaw = String(formData.get("description") ?? "").trim();
-  const tier = String(formData.get("tier") ?? "") as PlanTier;
-  const limitType = String(formData.get("limitType") ?? "") as PlanLimitType;
-
-  const durationDays = Number(formData.get("durationDays"));
-  const deviceLimit = Number(formData.get("deviceLimit"));
-  const trafficLimitGb = Number(formData.get("trafficLimitGb"));
-  const priceRub = Number(formData.get("priceRub"));
-
-  const internalSquadUuidRaw = String(formData.get("internalSquadUuid") ?? "").trim();
-  const externalSquadUuidRaw = String(formData.get("externalSquadUuid") ?? "").trim();
-
-  if (!code || !/^[a-z0-9_-]{3,64}$/.test(code)) {
-    throw new Error("Код плана должен быть 3-64 символа: a-z, 0-9, _ или -.");
-  }
-  if (!title) {
-    throw new Error("Название плана обязательно.");
-  }
-  if (!PLAN_TIER_OPTIONS.includes(tier)) {
-    throw new Error("Некорректный tier.");
-  }
-  if (!PLAN_LIMIT_OPTIONS.includes(limitType)) {
-    throw new Error("Некорректный тип лимита.");
-  }
-  if (!Number.isInteger(durationDays) || durationDays <= 0) {
-    throw new Error("Длительность должна быть целым числом больше 0.");
-  }
-  if (!Number.isInteger(priceRub) || priceRub <= 0) {
-    throw new Error("Цена должна быть целым числом больше 0.");
-  }
-
-  if (!Number.isInteger(deviceLimit) || deviceLimit <= 0) {
-    throw new Error("Лимит устройств должен быть целым числом больше 0.");
-  }
-
-  let normalizedTrafficLimitGb: number | null = null;
-  if (limitType === "TRAFFIC") {
-    if (!Number.isInteger(trafficLimitGb) || trafficLimitGb <= 0) {
-      throw new Error("Для типа TRAFFIC нужно указать лимит трафика в ГБ (целое число > 0).");
-    }
-    normalizedTrafficLimitGb = trafficLimitGb;
-  }
-
-  return {
-    id: id || undefined,
-    code,
-    title,
-    description: descriptionRaw || null,
-    tier,
-    limitType,
-    durationDays,
-    deviceLimit,
-    trafficLimitGb: normalizedTrafficLimitGb,
-    priceRub,
-    internalSquadUuid: internalSquadUuidRaw || null,
-    externalSquadUuid: externalSquadUuidRaw || null,
-    isActive: String(formData.get("isActive") ?? "").toLowerCase() === "on"
-  };
-}
-
 function formatPlanTier(tier: PlanTier) {
   if (tier === "SIMPLE") return "Simple";
   if (tier === "EXTENDED") return "Extended";
@@ -100,6 +18,70 @@ function formatPlanTier(tier: PlanTier) {
 
 function formatPlanLimitType(limitType: PlanLimitType) {
   return limitType === "TRAFFIC" ? "Трафик" : "Устройства";
+}
+
+function formatDurationLabel(days: number) {
+  if (days === 30) return "1 месяц";
+  if (days === 90) return "3 месяца";
+  if (days === 180) return "6 месяцев";
+  if (days === 365) return "1 год";
+  return `${days} дн.`;
+}
+
+function getPlanGroupKey(code: string) {
+  const match = code.match(/^(.*)_((?:\d+[mdy])|(?:\d+d))$/i);
+  if (!match) {
+    return code;
+  }
+  return match[1];
+}
+
+function getDurationCode(days: number) {
+  if (days === 30) return "1m";
+  if (days === 90) return "3m";
+  if (days === 180) return "6m";
+  if (days === 365) return "12m";
+  return `${days}d`;
+}
+
+function parseDurationPrices(raw: string) {
+  const lines = raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    throw new Error("Укажи хотя бы один срок в формате дни:цена.");
+  }
+
+  const entries: Array<{ durationDays: number; priceRub: number }> = [];
+  for (const line of lines) {
+    const [daysRaw, priceRaw] = line.split(":").map((x) => x?.trim() ?? "");
+    const durationDays = Number(daysRaw);
+    const priceRub = Number(priceRaw);
+
+    if (!Number.isInteger(durationDays) || durationDays <= 0) {
+      throw new Error(`Некорректная длительность в строке: ${line}`);
+    }
+    if (!Number.isInteger(priceRub) || priceRub <= 0) {
+      throw new Error(`Некорректная цена в строке: ${line}`);
+    }
+
+    entries.push({ durationDays, priceRub });
+  }
+
+  const uniq = new Map<number, number>();
+  for (const entry of entries) {
+    uniq.set(entry.durationDays, entry.priceRub);
+  }
+
+  return Array.from(uniq.entries())
+    .map(([durationDays, priceRub]) => ({ durationDays, priceRub }))
+    .sort((a, b) => a.durationDays - b.durationDays);
+}
+
+function toDurationPricesText(options: Array<{ durationDays: number; priceRub: number }>) {
+  return options.map((option) => `${option.durationDays}:${option.priceRub}`).join("\n");
 }
 
 function randomPromoCode(prefix: string, length: number) {
@@ -148,7 +130,7 @@ export default async function AdminPage() {
 
     const target = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, role: true, email: true }
+      select: { id: true, role: true }
     });
     if (!target) {
       throw new Error("Пользователь не найден.");
@@ -165,15 +147,12 @@ export default async function AdminPage() {
       }
     }
 
-    await prisma.user.update({
-      where: { id: target.id },
-      data: { role: nextRole }
-    });
+    await prisma.user.update({ where: { id: target.id }, data: { role: nextRole } });
 
     revalidatePath("/admin");
   }
 
-  async function upsertPlanAction(formData: FormData) {
+  async function upsertPlanGroupAction(formData: FormData) {
     "use server";
 
     const actor = await auth();
@@ -181,42 +160,94 @@ export default async function AdminPage() {
       throw new Error("Нет прав для управления тарифами.");
     }
 
-    const parsed = parsePlanForm(formData);
+    const groupCode = String(formData.get("groupCode") ?? "")
+      .trim()
+      .toLowerCase();
+    if (!groupCode || !/^[a-z0-9_-]{2,40}$/.test(groupCode)) {
+      throw new Error("Код группы должен быть 2-40 символов: a-z, 0-9, _ или -.");
+    }
 
-    if (parsed.id) {
-      await prisma.plan.update({
-        where: { id: parsed.id },
-        data: {
-          code: parsed.code,
-          title: parsed.title,
-          description: parsed.description,
-          tier: parsed.tier,
-          limitType: parsed.limitType,
-          durationDays: parsed.durationDays,
-          deviceLimit: parsed.deviceLimit,
-          trafficLimitGb: parsed.trafficLimitGb,
-          priceRub: parsed.priceRub,
-          internalSquadUuid: parsed.internalSquadUuid,
-          externalSquadUuid: parsed.externalSquadUuid,
-          isActive: parsed.isActive
+    const title = String(formData.get("title") ?? "").trim();
+    if (!title) {
+      throw new Error("Название тарифа обязательно.");
+    }
+
+    const description = String(formData.get("description") ?? "").trim() || null;
+    const tier = String(formData.get("tier") ?? "") as PlanTier;
+    if (!PLAN_TIER_OPTIONS.includes(tier)) {
+      throw new Error("Некорректный tier.");
+    }
+
+    const limitType = String(formData.get("limitType") ?? "") as PlanLimitType;
+    if (!PLAN_LIMIT_OPTIONS.includes(limitType)) {
+      throw new Error("Некорректный тип лимита.");
+    }
+
+    const deviceLimit = Number(formData.get("deviceLimit") ?? 1);
+    if (!Number.isInteger(deviceLimit) || deviceLimit <= 0) {
+      throw new Error("Лимит устройств должен быть целым числом > 0.");
+    }
+
+    const trafficLimitGbRaw = Number(formData.get("trafficLimitGb") ?? 0);
+    const trafficLimitGb = limitType === "TRAFFIC" ? trafficLimitGbRaw : null;
+    if (limitType === "TRAFFIC" && (!Number.isInteger(trafficLimitGbRaw) || trafficLimitGbRaw <= 0)) {
+      throw new Error("Для TRAFFIC укажи лимит трафика в ГБ (целое число > 0).");
+    }
+
+    const internalSquadUuid = String(formData.get("internalSquadUuid") ?? "").trim() || null;
+    const externalSquadUuid = String(formData.get("externalSquadUuid") ?? "").trim() || null;
+    const isActive = String(formData.get("isActive") ?? "").toLowerCase() === "on";
+
+    const durationPrices = parseDurationPrices(String(formData.get("durationPrices") ?? ""));
+
+    const nextCodes = new Set<string>();
+
+    for (const option of durationPrices) {
+      const code = `${groupCode}_${getDurationCode(option.durationDays)}`;
+      nextCodes.add(code);
+
+      await prisma.plan.upsert({
+        where: { code },
+        create: {
+          code,
+          tier,
+          title,
+          description,
+          limitType,
+          durationDays: option.durationDays,
+          deviceLimit,
+          trafficLimitGb,
+          priceRub: option.priceRub,
+          internalSquadUuid,
+          externalSquadUuid,
+          isActive
+        },
+        update: {
+          tier,
+          title,
+          description,
+          limitType,
+          durationDays: option.durationDays,
+          deviceLimit,
+          trafficLimitGb,
+          priceRub: option.priceRub,
+          internalSquadUuid,
+          externalSquadUuid,
+          isActive
         }
       });
-    } else {
-      await prisma.plan.create({
-        data: {
-          code: parsed.code,
-          title: parsed.title,
-          description: parsed.description,
-          tier: parsed.tier,
-          limitType: parsed.limitType,
-          durationDays: parsed.durationDays,
-          deviceLimit: parsed.deviceLimit,
-          trafficLimitGb: parsed.trafficLimitGb,
-          priceRub: parsed.priceRub,
-          internalSquadUuid: parsed.internalSquadUuid,
-          externalSquadUuid: parsed.externalSquadUuid,
-          isActive: parsed.isActive
-        }
+    }
+
+    const existingGroupPlans = await prisma.plan.findMany({
+      where: { code: { startsWith: `${groupCode}_` } },
+      select: { code: true }
+    });
+
+    const staleCodes = existingGroupPlans.map((plan) => plan.code).filter((code) => !nextCodes.has(code));
+    if (staleCodes.length > 0) {
+      await prisma.plan.updateMany({
+        where: { code: { in: staleCodes } },
+        data: { isActive: false }
       });
     }
 
@@ -224,7 +255,7 @@ export default async function AdminPage() {
     revalidatePath("/");
   }
 
-  async function togglePlanActiveAction(formData: FormData) {
+  async function togglePlanGroupActiveAction(formData: FormData) {
     "use server";
 
     const actor = await auth();
@@ -232,19 +263,15 @@ export default async function AdminPage() {
       throw new Error("Нет прав для управления тарифами.");
     }
 
-    const planId = String(formData.get("planId") ?? "").trim();
-    if (!planId) {
-      throw new Error("Не передан planId.");
+    const groupCode = String(formData.get("groupCode") ?? "").trim().toLowerCase();
+    const nextIsActive = String(formData.get("nextIsActive") ?? "").toLowerCase() === "true";
+    if (!groupCode) {
+      throw new Error("Не передан код группы.");
     }
 
-    const current = await prisma.plan.findUnique({ where: { id: planId }, select: { id: true, isActive: true } });
-    if (!current) {
-      throw new Error("План не найден.");
-    }
-
-    await prisma.plan.update({
-      where: { id: current.id },
-      data: { isActive: !current.isActive }
+    await prisma.plan.updateMany({
+      where: { code: { startsWith: `${groupCode}_` } },
+      data: { isActive: nextIsActive }
     });
 
     revalidatePath("/admin");
@@ -406,6 +433,52 @@ export default async function AdminPage() {
     })
   ]);
 
+  const groupedPlans = new Map<
+    string,
+    {
+      groupCode: string;
+      title: string;
+      description: string | null;
+      tier: PlanTier;
+      limitType: PlanLimitType;
+      deviceLimit: number;
+      trafficLimitGb: number | null;
+      internalSquadUuid: string | null;
+      externalSquadUuid: string | null;
+      isActive: boolean;
+      options: Array<{ code: string; durationDays: number; priceRub: number; isActive: boolean }>;
+    }
+  >();
+
+  for (const plan of plans) {
+    const groupCode = getPlanGroupKey(plan.code);
+    const current = groupedPlans.get(groupCode);
+    if (!current) {
+      groupedPlans.set(groupCode, {
+        groupCode,
+        title: plan.title,
+        description: plan.description,
+        tier: plan.tier,
+        limitType: plan.limitType,
+        deviceLimit: plan.deviceLimit,
+        trafficLimitGb: plan.trafficLimitGb,
+        internalSquadUuid: plan.internalSquadUuid,
+        externalSquadUuid: plan.externalSquadUuid,
+        isActive: plan.isActive,
+        options: [{ code: plan.code, durationDays: plan.durationDays, priceRub: plan.priceRub, isActive: plan.isActive }]
+      });
+      continue;
+    }
+
+    current.options.push({ code: plan.code, durationDays: plan.durationDays, priceRub: plan.priceRub, isActive: plan.isActive });
+    current.isActive = current.isActive || plan.isActive;
+  }
+
+  const planGroups = Array.from(groupedPlans.values()).map((group) => ({
+    ...group,
+    options: group.options.sort((a, b) => a.durationDays - b.durationDays)
+  }));
+
   let internalSquads: Array<{ uuid: string; name: string }> = [];
   let externalSquads: Array<{ uuid: string; name: string }> = [];
   let squadsLoadError: string | null = null;
@@ -446,38 +519,54 @@ export default async function AdminPage() {
       ) : null}
 
       <article style={cardStyle}>
-        <h3 style={{ marginTop: 0 }}>Добавить тариф</h3>
-        <PlanForm
-          action={upsertPlanAction}
-          submitLabel="Создать тариф"
+        <h3 style={{ marginTop: 0 }}>Добавить/обновить тариф (одна карточка, много сроков)</h3>
+        <PlanGroupForm
+          action={upsertPlanGroupAction}
+          submitLabel="Сохранить тариф"
           internalSquads={internalSquads}
           externalSquads={externalSquads}
         />
       </article>
 
       <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-        {plans.map((plan) => (
-          <article key={plan.id} style={cardStyle}>
+        {planGroups.map((group) => (
+          <article key={group.groupCode} style={cardStyle}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
               <div>
-                <p style={{ margin: 0, fontWeight: 700 }}>{plan.title}</p>
+                <p style={{ margin: 0, fontWeight: 700 }}>{group.title}</p>
                 <p style={{ margin: "4px 0 0", color: "#475569", fontSize: 13 }}>
-                  Код: {plan.code} | Tier: {formatPlanTier(plan.tier)} | Тип: {formatPlanLimitType(plan.limitType)} | {plan.durationDays} дн. | {plan.priceRub} ₽
+                  Код группы: {group.groupCode} | Tier: {formatPlanTier(group.tier)} | Тип: {formatPlanLimitType(group.limitType)}
+                </p>
+                <p style={{ margin: "4px 0 0", color: "#475569", fontSize: 13 }}>
+                  Варианты: {group.options.map((o) => `${formatDurationLabel(o.durationDays)} (${o.priceRub} ₽)`).join(", ")}
                 </p>
               </div>
-              <form action={togglePlanActiveAction}>
-                <input type="hidden" name="planId" value={plan.id} />
+              <form action={togglePlanGroupActiveAction}>
+                <input type="hidden" name="groupCode" value={group.groupCode} />
+                <input type="hidden" name="nextIsActive" value={String(!group.isActive)} />
                 <button type="submit" style={smallButtonStyle}>
-                  {plan.isActive ? "Отключить" : "Включить"}
+                  {group.isActive ? "Отключить группу" : "Включить группу"}
                 </button>
               </form>
             </div>
 
             <div style={{ marginTop: 10 }}>
-              <PlanForm
-                action={upsertPlanAction}
-                submitLabel="Сохранить"
-                initial={plan}
+              <PlanGroupForm
+                action={upsertPlanGroupAction}
+                submitLabel="Обновить тариф"
+                initial={{
+                  groupCode: group.groupCode,
+                  title: group.title,
+                  description: group.description,
+                  tier: group.tier,
+                  limitType: group.limitType,
+                  deviceLimit: group.deviceLimit,
+                  trafficLimitGb: group.trafficLimitGb,
+                  internalSquadUuid: group.internalSquadUuid,
+                  externalSquadUuid: group.externalSquadUuid,
+                  isActive: group.isActive,
+                  durationPrices: toDurationPricesText(group.options)
+                }}
                 internalSquads={internalSquads}
                 externalSquads={externalSquads}
               />
@@ -613,7 +702,7 @@ export default async function AdminPage() {
   );
 }
 
-function PlanForm({
+function PlanGroupForm({
   action,
   submitLabel,
   initial,
@@ -623,43 +712,34 @@ function PlanForm({
   action: (formData: FormData) => Promise<void>;
   submitLabel: string;
   initial?: {
-    id: string;
-    code: string;
+    groupCode: string;
     title: string;
     description: string | null;
     tier: PlanTier;
     limitType: PlanLimitType;
-    durationDays: number;
     deviceLimit: number;
     trafficLimitGb: number | null;
-    priceRub: number;
     internalSquadUuid: string | null;
     externalSquadUuid: string | null;
     isActive: boolean;
+    durationPrices: string;
   };
   internalSquads: Array<{ uuid: string; name: string }>;
   externalSquads: Array<{ uuid: string; name: string }>;
 }) {
   return (
     <form action={action} style={{ display: "grid", gap: 8 }}>
-      {initial ? <input type="hidden" name="planId" value={initial.id} /> : null}
-
-      <label style={labelStyle}>
-        Код плана
-        <input name="code" defaultValue={initial?.code ?? ""} required style={inputStyle} />
-      </label>
-
-      <label style={labelStyle}>
-        Название
-        <input name="title" defaultValue={initial?.title ?? ""} required style={inputStyle} />
-      </label>
-
-      <label style={labelStyle}>
-        Описание
-        <textarea name="description" defaultValue={initial?.description ?? ""} rows={2} style={inputStyle} />
-      </label>
-
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 8 }}>
+        <label style={labelStyle}>
+          Код группы
+          <input name="groupCode" defaultValue={initial?.groupCode ?? ""} required style={inputStyle} placeholder="simple" />
+        </label>
+
+        <label style={labelStyle}>
+          Название
+          <input name="title" defaultValue={initial?.title ?? ""} required style={inputStyle} />
+        </label>
+
         <label style={labelStyle}>
           Tier
           <select name="tier" defaultValue={initial?.tier ?? "CUSTOM"} style={inputStyle}>
@@ -680,16 +760,6 @@ function PlanForm({
               </option>
             ))}
           </select>
-        </label>
-
-        <label style={labelStyle}>
-          Длительность (дни)
-          <input name="durationDays" type="number" min={1} step={1} defaultValue={initial?.durationDays ?? 30} required style={inputStyle} />
-        </label>
-
-        <label style={labelStyle}>
-          Цена (RUB)
-          <input name="priceRub" type="number" min={1} step={1} defaultValue={initial?.priceRub ?? 100} required style={inputStyle} />
         </label>
 
         <label style={labelStyle}>
@@ -724,6 +794,22 @@ function PlanForm({
           />
         </label>
       </div>
+
+      <label style={labelStyle}>
+        Описание
+        <textarea name="description" defaultValue={initial?.description ?? ""} rows={2} style={inputStyle} />
+      </label>
+
+      <label style={labelStyle}>
+        Сроки и цены (формат: дни:цена, каждая строка отдельно)
+        <textarea
+          name="durationPrices"
+          defaultValue={initial?.durationPrices ?? "30:80\n90:220\n180:400\n365:720"}
+          rows={5}
+          required
+          style={inputStyle}
+        />
+      </label>
 
       <datalist id="internal-squads-list">
         {internalSquads.map((squad) => (
