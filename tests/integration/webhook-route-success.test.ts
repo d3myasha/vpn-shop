@@ -72,7 +72,11 @@ describe("POST /api/webhooks/yookassa success flow", () => {
       expiresAt: new Date("2026-12-31T00:00:00.000Z"),
       deviceLimitSnapshot: 5,
       remnawaveProfileId: null,
-      user: { email: "user@example.com" }
+      user: { email: "user@example.com" },
+      plan: {
+        internalSquadUuid: "internal-squad-1",
+        externalSquadUuid: "external-squad-1"
+      }
     });
 
     syncRemnawaveMock.mockResolvedValue({
@@ -96,6 +100,12 @@ describe("POST /api/webhooks/yookassa success flow", () => {
     const response = await POST(request);
     expect(response.status).toBe(200);
     expect(syncRemnawaveMock).toHaveBeenCalledTimes(1);
+    expect(syncRemnawaveMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        internalSquadUuid: "internal-squad-1",
+        externalSquadUuid: "external-squad-1"
+      })
+    );
     expect(updateMock).toHaveBeenCalledTimes(1);
   });
 });

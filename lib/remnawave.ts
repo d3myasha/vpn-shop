@@ -141,6 +141,8 @@ async function createUser(params: {
   expireAt: string;
   deviceLimit: number;
   description: string;
+  internalSquadUuid?: string | null;
+  externalSquadUuid?: string | null;
 }) {
   const body = {
     username: params.username,
@@ -150,7 +152,9 @@ async function createUser(params: {
     expireAt: params.expireAt,
     description: params.description,
     email: params.email,
-    hwidDeviceLimit: params.deviceLimit
+    hwidDeviceLimit: params.deviceLimit,
+    ...(params.internalSquadUuid ? { activeInternalSquads: [params.internalSquadUuid] } : {}),
+    ...(params.externalSquadUuid ? { externalSquadUuid: params.externalSquadUuid } : {})
   };
 
   const result = await remnawaveRequest<RemnawaveUserResponse>("/api/users", {
@@ -165,14 +169,22 @@ async function createUser(params: {
   return result.response;
 }
 
-async function updateUser(params: { uuid: string; expireAt: string; deviceLimit: number }) {
+async function updateUser(params: {
+  uuid: string;
+  expireAt: string;
+  deviceLimit: number;
+  internalSquadUuid?: string | null;
+  externalSquadUuid?: string | null;
+}) {
   const body = {
     uuid: params.uuid,
     status: "ACTIVE",
     trafficLimitBytes: 0,
     trafficLimitStrategy: "NO_RESET",
     expireAt: params.expireAt,
-    hwidDeviceLimit: params.deviceLimit
+    hwidDeviceLimit: params.deviceLimit,
+    ...(params.internalSquadUuid ? { activeInternalSquads: [params.internalSquadUuid] } : {}),
+    ...(params.externalSquadUuid ? { externalSquadUuid: params.externalSquadUuid } : {})
   };
 
   const result = await remnawaveRequest<RemnawaveUserResponse>("/api/users", {
@@ -201,6 +213,8 @@ export async function syncRemnawaveSubscription(params: {
   deviceLimit: number;
   internalSubscriptionId: string;
   remnawaveProfileId?: string | null;
+  internalSquadUuid?: string | null;
+  externalSquadUuid?: string | null;
 }) {
   const description = `vpn-shop:${params.internalSubscriptionId}`;
   const expireAtIso = params.expiresAt.toISOString();
@@ -210,7 +224,9 @@ export async function syncRemnawaveSubscription(params: {
     user = await updateUser({
       uuid: params.remnawaveProfileId,
       expireAt: expireAtIso,
-      deviceLimit: params.deviceLimit
+      deviceLimit: params.deviceLimit,
+      internalSquadUuid: params.internalSquadUuid,
+      externalSquadUuid: params.externalSquadUuid
     });
   } else {
     user = await getUserByEmail(params.email);
@@ -222,13 +238,17 @@ export async function syncRemnawaveSubscription(params: {
       username: buildUsername(params.email, params.internalSubscriptionId),
       expireAt: expireAtIso,
       deviceLimit: params.deviceLimit,
-      description
+      description,
+      internalSquadUuid: params.internalSquadUuid,
+      externalSquadUuid: params.externalSquadUuid
     });
   } else if (!params.remnawaveProfileId) {
     user = await updateUser({
       uuid: user.uuid,
       expireAt: expireAtIso,
-      deviceLimit: params.deviceLimit
+      deviceLimit: params.deviceLimit,
+      internalSquadUuid: params.internalSquadUuid,
+      externalSquadUuid: params.externalSquadUuid
     });
   }
 

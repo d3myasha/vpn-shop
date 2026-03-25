@@ -97,7 +97,13 @@ export async function POST(request: NextRequest) {
     const subscription = await prisma.subscription.findUnique({
       where: { id: activationResult.subscriptionId },
       include: {
-        user: true
+        user: true,
+        plan: {
+          select: {
+            internalSquadUuid: true,
+            externalSquadUuid: true
+          }
+        }
       }
     });
     if (!subscription) {
@@ -109,7 +115,9 @@ export async function POST(request: NextRequest) {
       expiresAt: subscription.expiresAt,
       deviceLimit: subscription.deviceLimitSnapshot,
       internalSubscriptionId: subscription.id,
-      remnawaveProfileId: subscription.remnawaveProfileId
+      remnawaveProfileId: subscription.remnawaveProfileId,
+      internalSquadUuid: subscription.plan.internalSquadUuid,
+      externalSquadUuid: subscription.plan.externalSquadUuid
     });
 
     await prisma.subscription.update({
