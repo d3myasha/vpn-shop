@@ -300,17 +300,16 @@ export default async function AdminPage() {
       throw new Error("Не переданы planIds группы.");
     }
 
-    // Сначала отключаем группу, затем удаляем только те планы, на которые нет ссылок из Subscription.
-    await prisma.plan.updateMany({
-      where: { id: { in: planIds } },
-      data: { isActive: false }
-    });
+    await prisma.$transaction(async (tx) => {
+      await tx.subscription.deleteMany({
+        where: {
+          planId: { in: planIds }
+        }
+      });
 
-    await prisma.plan.deleteMany({
-      where: {
-        id: { in: planIds },
-        subscriptions: { none: {} }
-      }
+      await tx.plan.deleteMany({
+        where: { id: { in: planIds } }
+      });
     });
 
     revalidatePath("/admin");
@@ -620,9 +619,12 @@ export default async function AdminPage() {
                   formAction={deletePlanGroupAction}
                   style={{ ...smallButtonStyle, borderColor: "#ef4444", color: "#b91c1c" }}
                 >
-                  Удалить тариф
+                  Удалить тариф навсегда
                 </button>
               </div>
+              <p style={{ margin: "8px 0 0", fontSize: 12, color: "#b91c1c" }}>
+                Удаление безвозвратное: удалит все варианты срока и связанные подписки этого тарифа.
+              </p>
             </div>
           </article>
         ))}
