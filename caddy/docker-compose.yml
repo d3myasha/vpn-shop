@@ -1,0 +1,20 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file:
+      - ../.env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data:/data
+      - ./config:/config
+    networks:
+      - app_net
+
+networks:
+  app_net:
+    external: true
+    name: vpn_shop_net
