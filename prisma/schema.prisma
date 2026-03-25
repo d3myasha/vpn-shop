@@ -30,6 +30,12 @@ enum PlanTier {
   SIMPLE
   EXTENDED
   SUPER
+  CUSTOM
+}
+
+enum PlanLimitType {
+  DEVICES
+  TRAFFIC
 }
 
 model User {
@@ -55,9 +61,14 @@ model Plan {
   code          String         @unique
   tier          PlanTier
   title         String
+  description   String?
+  limitType     PlanLimitType  @default(DEVICES)
   durationDays  Int
   deviceLimit   Int
+  trafficLimitGb Int?
   priceRub      Int
+  internalSquadUuid String?
+  externalSquadUuid String?
   isActive      Boolean        @default(true)
   subscriptions Subscription[]
   createdAt     DateTime       @default(now())

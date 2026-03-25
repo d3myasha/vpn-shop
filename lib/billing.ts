@@ -77,7 +77,8 @@ async function upsertSubscriptionByPlan(tx: Prisma.TransactionClient, userId: st
         status: SubscriptionStatus.ACTIVE,
         startedAt: now,
         expiresAt: addDays(now, plan.durationDays),
-        deviceLimitSnapshot: plan.deviceLimit
+        deviceLimitSnapshot: plan.deviceLimit,
+        trafficLimitGb: plan.limitType === "TRAFFIC" ? plan.trafficLimitGb : null
       }
     });
     return created;
@@ -90,7 +91,8 @@ async function upsertSubscriptionByPlan(tx: Prisma.TransactionClient, userId: st
       planId: plan.id,
       status: SubscriptionStatus.ACTIVE,
       expiresAt: addDays(anchor, plan.durationDays),
-      deviceLimitSnapshot: plan.deviceLimit
+      deviceLimitSnapshot: plan.deviceLimit,
+      trafficLimitGb: plan.limitType === "TRAFFIC" ? plan.trafficLimitGb : null
     }
   });
 }

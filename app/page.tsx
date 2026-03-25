@@ -1,6 +1,6 @@
-import { PLAN_CARDS } from "@/lib/plans";
 import Link from "next/link";
 import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
 
 function formatRub(value: number) {
   return new Intl.NumberFormat("ru-RU").format(value);
@@ -9,6 +9,21 @@ function formatRub(value: number) {
 export default async function HomePage() {
   const session = await auth();
   const isAdmin = session?.user?.role === "OWNER" || session?.user?.role === "ADMIN";
+  const plans = await prisma.plan.findMany({
+    where: { isActive: true },
+    orderBy: [{ title: "asc" }, { durationDays: "asc" }],
+    select: {
+      id: true,
+      code: true,
+      title: true,
+      description: true,
+      durationDays: true,
+      deviceLimit: true,
+      limitType: true,
+      trafficLimitGb: true,
+      priceRub: true
+    }
+  });
 
   return (
     <main className="container" style={{ padding: "36px 0 60px" }}>
@@ -47,9 +62,9 @@ export default async function HomePage() {
           gap: 12
         }}
       >
-        {PLAN_CARDS.map((plan) => (
+        {plans.map((plan) => (
           <article
-            key={plan.code}
+            key={plan.id}
             style={{
               borderRadius: 14,
               border: "1px solid #e2e8f0",
@@ -58,9 +73,12 @@ export default async function HomePage() {
               boxShadow: "0 8px 28px rgba(15,23,42,0.05)"
             }}
           >
-            <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>{plan.groupTitle}</p>
-            <h2 style={{ margin: "6px 0 10px", fontSize: 19 }}>{plan.durationLabel}</h2>
-            <p style={{ margin: "0 0 4px", fontSize: 14 }}>Устройств: {plan.deviceLimit}</p>
+            <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>{plan.title}</p>
+            <h2 style={{ margin: "6px 0 10px", fontSize: 19 }}>{plan.durationDays} дней</h2>
+            <p style={{ margin: "0 0 4px", fontSize: 14 }}>
+              {plan.limitType === "TRAFFIC" ? `Трафик: ${plan.trafficLimitGb ?? "—"} ГБ` : `Устройств: ${plan.deviceLimit}`}
+            </p>
+            {plan.description ? <p style={{ margin: "0 0 8px", fontSize: 13, color: "#64748b" }}>{plan.description}</p> : null}
             <p style={{ margin: "0 0 16px", fontWeight: 600, fontSize: 22 }}>{formatRub(plan.priceRub)} ₽</p>
             <form action="/api/checkout" method="post">
               <input type="hidden" name="planCode" value={plan.code} />

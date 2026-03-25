@@ -9,6 +9,11 @@ type RemnawaveUser = {
   subscriptionUrl?: string;
 };
 
+export type RemnawaveSquadOption = {
+  uuid: string;
+  name: string;
+};
+
 type RemnawaveSubscriptionResponse = {
   response?: {
     subscriptionUrl?: string;
@@ -23,6 +28,18 @@ type RemnawaveUserResponse = {
   response?: RemnawaveUser;
 };
 
+type RemnawaveInternalSquadsResponse = {
+  response?: {
+    internalSquads?: Array<{ uuid: string; name: string }>;
+  } | Array<{ uuid: string; name: string }>;
+};
+
+type RemnawaveExternalSquadsResponse = {
+  response?: {
+    externalSquads?: Array<{ uuid: string; name: string }>;
+  } | Array<{ uuid: string; name: string }>;
+};
+
 function buildAuthHeader() {
   const env = getEnv();
   const headerName = env.REMNAWAVE_API_HEADER_NAME;
@@ -31,6 +48,38 @@ function buildAuthHeader() {
     : env.REMNAWAVE_API_KEY;
 
   return { [headerName]: value };
+}
+
+function mapSquadOptions(input: Array<{ uuid?: string; name?: string }> | undefined): RemnawaveSquadOption[] {
+  return (input ?? [])
+    .filter((item): item is { uuid: string; name: string } => Boolean(item?.uuid && item?.name))
+    .map((item) => ({ uuid: item.uuid, name: item.name }));
+}
+
+function extractInternalSquads(payload: RemnawaveInternalSquadsResponse) {
+  if (Array.isArray(payload.response)) {
+    return payload.response;
+  }
+  return payload.response?.internalSquads;
+}
+
+function extractExternalSquads(payload: RemnawaveExternalSquadsResponse) {
+  if (Array.isArray(payload.response)) {
+    return payload.response;
+  }
+  return payload.response?.externalSquads;
+}
+
+export async function listRemnawaveSquads() {
+  const [internalData, externalData] = await Promise.all([
+    remnawaveRequest<RemnawaveInternalSquadsResponse>("/api/internal-squads", { method: "GET" }),
+    remnawaveRequest<RemnawaveExternalSquadsResponse>("/api/external-squads", { method: "GET" })
+  ]);
+
+  return {
+    internalSquads: mapSquadOptions(extractInternalSquads(internalData)),
+    externalSquads: mapSquadOptions(extractExternalSquads(externalData))
+  };
 }
 
 async function remnawaveRequest<T>(path: string, init: RequestInit): Promise<T> {
