@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { listRemnawaveSquads } from "@/lib/remnawave";
+import { listRemnawaveSquads, syncRemnawaveSubscription } from "@/lib/remnawave";
 import { PlanLimitType, PlanTier, UserRole } from "@prisma/client";
 
 const ROLE_OPTIONS: UserRole[] = ["CUSTOMER", "ADMIN", "OWNER"];
@@ -100,6 +100,29 @@ function formatPlanTier(tier: PlanTier) {
 
 function formatPlanLimitType(limitType: PlanLimitType) {
   return limitType === "TRAFFIC" ? "Трафик" : "Устройства";
+}
+
+function randomPromoCode(prefix: string, length: number) {
+  const symbols = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let body = "";
+  for (let i = 0; i < length; i += 1) {
+    body += symbols[Math.floor(Math.random() * symbols.length)];
+  }
+
+  if (!prefix) {
+    return body;
+  }
+  return `${prefix}-${body}`;
+}
+
+function formatPromoDiscount(discountPercent: number | null, discountRub: number | null) {
+  if (discountPercent) {
+    return `${discountPercent}%`;
+  }
+  if (discountRub) {
+    return `${discountRub} ₽`;
+  }
+  return "—";
 }
 
 export default async function AdminPage() {
@@ -228,7 +251,142 @@ export default async function AdminPage() {
     revalidatePath("/");
   }
 
-  const [usersCount, paymentsCount, activeSubscriptions, users, plans] = await Promise.all([
+  async function syncRemnawaveUsersAction() {
+    "use server";
+
+    const actor = await auth();
+    if (!actor?.user || (actor.user.role !== "OWNER" && actor.user.role !== "ADMIN")) {
+      throw new Error("Нет прав для синхронизации с Remnawave.");
+    }
+
+    const activeSubscriptions = await prisma.subscription.findMany({
+      where: { status: "ACTIVE" },
+      include: {
+        user: true,
+        plan: {
+          select: {
+            internalSquadUuid: true,
+            externalSquadUuid: true
+          }
+        }
+      }
+    });
+
+    for (const subscription of activeSubscriptions) {
+      try {
+        const remnawaveResult = await syncRemnawaveSubscription({
+          email: subscription.user.email,
+          expiresAt: subscription.expiresAt,
+          deviceLimit: subscription.deviceLimitSnapshot,
+          internalSubscriptionId: subscription.id,
+          remnawaveProfileId: subscription.remnawaveProfileId,
+          internalSquadUuid: subscription.plan.internalSquadUuid,
+          externalSquadUuid: subscription.plan.externalSquadUuid
+        });
+
+        await prisma.subscription.update({
+          where: { id: subscription.id },
+          data: {
+            remnawaveProfileId: remnawaveResult.remnawaveUserUuid,
+            remnawaveSubscription: remnawaveResult.subscriptionUrl
+          }
+        });
+      } catch (error) {
+        console.error("remnawave_sync_failed", subscription.id, error);
+      }
+    }
+
+    revalidatePath("/admin");
+  }
+
+  async function generatePromoCodesAction(formData: FormData) {
+    "use server";
+
+    const actor = await auth();
+    if (!actor?.user || (actor.user.role !== "OWNER" && actor.user.role !== "ADMIN")) {
+      throw new Error("Нет прав для генерации промокодов.");
+    }
+
+    const quantity = Number(formData.get("quantity") ?? 1);
+    const prefix = String(formData.get("prefix") ?? "")
+      .toUpperCase()
+      .trim()
+      .replace(/[^A-Z0-9_-]/g, "")
+      .slice(0, 12);
+    const codeLength = Number(formData.get("codeLength") ?? 8);
+    const discountType = String(formData.get("discountType") ?? "PERCENT");
+    const discountValue = Number(formData.get("discountValue") ?? 0);
+    const oneTime = String(formData.get("oneTime") ?? "").toLowerCase() === "on";
+    const maxActivationsRaw = Number(formData.get("maxActivations") ?? 1);
+    const validUntilRaw = String(formData.get("validUntil") ?? "");
+    const isActive = String(formData.get("isActive") ?? "").toLowerCase() === "on";
+
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
+      throw new Error("Количество промокодов должно быть от 1 до 100.");
+    }
+    if (!Number.isInteger(codeLength) || codeLength < 4 || codeLength > 24) {
+      throw new Error("Длина кода должна быть от 4 до 24.");
+    }
+    if (!Number.isInteger(discountValue) || discountValue <= 0) {
+      throw new Error("Значение скидки должно быть целым числом больше 0.");
+    }
+
+    const validUntil = new Date(validUntilRaw);
+    if (!validUntilRaw || Number.isNaN(validUntil.getTime()) || validUntil <= new Date()) {
+      throw new Error("Укажи корректную будущую дату окончания действия.");
+    }
+
+    const maxActivations = oneTime ? 1 : maxActivationsRaw;
+    if (!Number.isInteger(maxActivations) || maxActivations < 1 || maxActivations > 100000) {
+      throw new Error("maxActivations должно быть от 1 до 100000.");
+    }
+
+    const discountPercent = discountType === "PERCENT" ? discountValue : null;
+    const discountRub = discountType === "RUB" ? discountValue : null;
+    if (!discountPercent && !discountRub) {
+      throw new Error("Некорректный тип скидки.");
+    }
+    if (discountPercent && discountPercent > 99) {
+      throw new Error("Скидка в процентах должна быть не более 99.");
+    }
+
+    for (let i = 0; i < quantity; i += 1) {
+      let created = false;
+      let attempt = 0;
+      while (!created && attempt < 20) {
+        attempt += 1;
+        const code = randomPromoCode(prefix, codeLength);
+
+        try {
+          await prisma.promoCode.create({
+            data: {
+              code,
+              discountPercent,
+              discountRub,
+              maxActivations,
+              validUntil,
+              isActive,
+              createdByUserId: actor.user.id
+            }
+          });
+          created = true;
+        } catch (error: unknown) {
+          if (typeof error === "object" && error && "code" in error && (error as { code?: string }).code === "P2002") {
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      if (!created) {
+        throw new Error("Не удалось сгенерировать уникальные коды, попробуй изменить префикс/длину.");
+      }
+    }
+
+    revalidatePath("/admin");
+  }
+
+  const [usersCount, paymentsCount, activeSubscriptions, users, plans, promoCodes] = await Promise.all([
     prisma.user.count(),
     prisma.payment.count(),
     prisma.subscription.count({ where: { status: "ACTIVE" } }),
@@ -236,7 +394,16 @@ export default async function AdminPage() {
       orderBy: { createdAt: "asc" },
       select: { id: true, email: true, role: true, createdAt: true }
     }),
-    prisma.plan.findMany({ orderBy: [{ title: "asc" }, { durationDays: "asc" }] })
+    prisma.plan.findMany({ orderBy: [{ title: "asc" }, { durationDays: "asc" }] }),
+    prisma.promoCode.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 30,
+      include: {
+        createdBy: {
+          select: { email: true }
+        }
+      }
+    })
   ]);
 
   let internalSquads: Array<{ uuid: string; name: string }> = [];
@@ -315,6 +482,89 @@ export default async function AdminPage() {
                 externalSquads={externalSquads}
               />
             </div>
+          </article>
+        ))}
+      </div>
+
+      <h2 style={{ marginTop: 30 }}>Remnawave</h2>
+      <article style={cardStyle}>
+        <p style={{ margin: "0 0 10px", color: "#475569" }}>
+          Массовая синхронизация активных подписок с Remnawave (профиль, срок, лимит устройств, internal/external squad).
+        </p>
+        <form action={syncRemnawaveUsersAction}>
+          <button type="submit" style={smallButtonStyle}>
+            Синхронизировать пользователей
+          </button>
+        </form>
+      </article>
+
+      <h2 style={{ marginTop: 30 }}>Генератор промокодов</h2>
+      <article style={cardStyle}>
+        <form action={generatePromoCodesAction} style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 8 }}>
+            <label style={labelStyle}>
+              Количество
+              <input name="quantity" type="number" min={1} max={100} defaultValue={1} required style={inputStyle} />
+            </label>
+            <label style={labelStyle}>
+              Префикс
+              <input name="prefix" placeholder="VPN" defaultValue="VPN" style={inputStyle} />
+            </label>
+            <label style={labelStyle}>
+              Длина кода
+              <input name="codeLength" type="number" min={4} max={24} defaultValue={8} required style={inputStyle} />
+            </label>
+            <label style={labelStyle}>
+              Тип скидки
+              <select name="discountType" defaultValue="PERCENT" style={inputStyle}>
+                <option value="PERCENT">Проценты</option>
+                <option value="RUB">Рубли</option>
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Значение скидки
+              <input name="discountValue" type="number" min={1} step={1} defaultValue={10} required style={inputStyle} />
+            </label>
+            <label style={labelStyle}>
+              Макс. активаций
+              <input name="maxActivations" type="number" min={1} step={1} defaultValue={1} required style={inputStyle} />
+            </label>
+            <label style={labelStyle}>
+              Срок действия до
+              <input
+                name="validUntil"
+                type="datetime-local"
+                defaultValue={new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 16)}
+                required
+                style={inputStyle}
+              />
+            </label>
+          </div>
+
+          <label style={{ ...labelStyle, flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <input name="oneTime" type="checkbox" defaultChecked />
+            Одноразовый (maxActivations = 1)
+          </label>
+          <label style={{ ...labelStyle, flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <input name="isActive" type="checkbox" defaultChecked />
+            Сразу активировать
+          </label>
+
+          <button type="submit" style={smallButtonStyle}>
+            Сгенерировать промокоды
+          </button>
+        </form>
+      </article>
+
+      <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+        {promoCodes.map((promo) => (
+          <article key={promo.id} style={cardStyle}>
+            <p style={{ margin: 0, fontWeight: 700 }}>{promo.code}</p>
+            <p style={{ margin: "4px 0 0", fontSize: 13, color: "#475569" }}>
+              Скидка: {formatPromoDiscount(promo.discountPercent, promo.discountRub)} | Активаций: {promo.activationsCount}/{promo.maxActivations} | До:{" "}
+              {new Date(promo.validUntil).toLocaleString("ru-RU")} | Статус: {promo.isActive ? "ACTIVE" : "DISABLED"}
+            </p>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>Создал: {promo.createdBy.email}</p>
           </article>
         ))}
       </div>
