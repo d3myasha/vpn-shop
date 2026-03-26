@@ -1,5 +1,4 @@
 import nodemailer from "nodemailer";
-import SMTPTransport from "nodemailer/lib/smtp-transport";
 import { logger } from "@/lib/logger";
 
 function parsePort(rawPort: string | undefined, fallback: number) {
@@ -15,43 +14,19 @@ function getTransportConfig() {
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
 
-  if (!host) {
+  if (!host || !user || !pass) {
     return null;
   }
 
-  const config: SMTPTransport.Options = {
+  return {
     host,
-    port: parsePort(process.env.SMTP_PORT, 25),
+    port: parsePort(process.env.SMTP_PORT, 587),
     secure: process.env.SMTP_SECURE === "true",
-    name: process.env.SMTP_HELO_NAME || undefined,
-  };
-
-  const authEnabled = process.env.SMTP_AUTH_ENABLED === "true" || (Boolean(user) && Boolean(pass));
-  if (authEnabled) {
-    if (!user || !pass) {
-      throw new Error("SMTP_AUTH_ENABLED=true, но SMTP_USER или SMTP_PASS не заполнены.");
-    }
-    config.auth = {
+    auth: {
       user,
       pass,
-    };
-  }
-
-  return config;
-}
-
-function getConfiguredFromAddress() {
-  const from = process.env.SMTP_FROM?.trim();
-  if (from) {
-    return from;
-  }
-
-  const smtpUser = process.env.SMTP_USER?.trim();
-  if (smtpUser) {
-    return smtpUser;
-  }
-
-  return "no-reply@localhost";
+    },
+  };
 }
 
 let cachedTransporter: nodemailer.Transporter | null = null;
@@ -73,10 +48,10 @@ function getTransporter() {
 export async function sendVerificationCodeEmail(params: { email: string; code: string }) {
   const transporter = getTransporter();
   if (!transporter) {
-    throw new Error("SMTP не настроен. Заполните хотя бы SMTP_HOST/SMTP_PORT.");
+    throw new Error("SMTP не настроен. Заполните SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS.");
   }
 
-  const from = getConfiguredFromAddress();
+  const from = process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "no-reply@vpn-shop.local";
   const subject = "Код подтверждения VPN Shop";
   const text = `Ваш код подтверждения: ${params.code}. Код действует 10 минут.`;
   const html = `<p>Ваш код подтверждения: <strong>${params.code}</strong></p><p>Код действует 10 минут.</p>`;
