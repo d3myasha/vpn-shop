@@ -4,12 +4,13 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { listRemnawaveSquads, syncRemnawaveSubscription } from "@/lib/remnawave";
+import { getOrCreateReferralSettings, REFERRAL_SETTINGS_ID } from "@/lib/referral-settings";
 import { PlanLimitType, PlanTier, UserRole } from "@prisma/client";
 
 const ROLE_OPTIONS: UserRole[] = ["CUSTOMER", "ADMIN", "OWNER"];
 const PLAN_TIER_OPTIONS: PlanTier[] = ["SIMPLE", "EXTENDED", "SUPER", "CUSTOM"];
 const PLAN_LIMIT_OPTIONS: PlanLimitType[] = ["DEVICES", "TRAFFIC"];
-const ADMIN_TABS = ["users", "plans", "promocodes"] as const;
+const ADMIN_TABS = ["users", "plans", "promocodes", "referrals"] as const;
 
 type AdminTab = (typeof ADMIN_TABS)[number];
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -481,6 +482,40 @@ export default async function AdminPage({
     revalidatePath("/admin");
   }
 
+  async function updateReferralSettingsAction(formData: FormData) {
+    "use server";
+
+    const actor = await auth();
+    if (!actor?.user || actor.user.role !== "OWNER") {
+      throw new Error("Нет прав для изменения настроек рефералки.");
+    }
+
+    const inviterBonusDays = Number(formData.get("inviterBonusDays") ?? 0);
+    const invitedBonusDays = Number(formData.get("invitedBonusDays") ?? 0);
+
+    if (!Number.isInteger(inviterBonusDays) || inviterBonusDays < 1) {
+      throw new Error("Награда приглашающему должна быть целым числом >= 1.");
+    }
+    if (!Number.isInteger(invitedBonusDays) || invitedBonusDays < 1) {
+      throw new Error("Награда приглашенному должна быть целым числом >= 1.");
+    }
+
+    await prisma.referralSettings.upsert({
+      where: { id: REFERRAL_SETTINGS_ID },
+      create: {
+        id: REFERRAL_SETTINGS_ID,
+        inviterBonusDays,
+        invitedBonusDays
+      },
+      update: {
+        inviterBonusDays,
+        invitedBonusDays
+      }
+    });
+
+    revalidatePath("/admin");
+  }
+
   const [usersCount, paymentsCount, activeSubscriptions, users, plans, promoCodes] = await Promise.all([
     prisma.user.count(),
     prisma.payment.count(),
@@ -559,6 +594,7 @@ export default async function AdminPage({
     const message = error instanceof Error ? error.message : "Не удалось загрузить сквады";
     squadsLoadError = message;
   }
+  const referralSettings = await getOrCreateReferralSettings();
 
   return (
     <main className="container" style={{ padding: "36px 0 64px" }}>
@@ -578,6 +614,9 @@ export default async function AdminPage({
             <Link href={adminTabHref("promocodes")} className={`panel-nav-link ${activeTab === "promocodes" ? "is-active" : ""}`}>
               Промокоды
             </Link>
+            <Link href={adminTabHref("referrals")} className={`panel-nav-link ${activeTab === "referrals" ? "is-active" : ""}`}>
+              Рефералка
+            </Link>
           </nav>
         </aside>
 
@@ -591,6 +630,9 @@ export default async function AdminPage({
             </Link>
             <Link href={adminTabHref("promocodes")} className={`panel-nav-link ${activeTab === "promocodes" ? "is-active" : ""}`}>
               Промокоды
+            </Link>
+            <Link href={adminTabHref("referrals")} className={`panel-nav-link ${activeTab === "referrals" ? "is-active" : ""}`}>
+              Рефералка
             </Link>
           </nav>
 
@@ -824,6 +866,46 @@ export default async function AdminPage({
                   </article>
                 ))}
               </div>
+            </>
+          ) : null}
+
+          {activeTab === "referrals" ? (
+            <>
+              <h2 style={{ marginTop: 0 }}>Управление реферальной системой</h2>
+              <article style={cardStyle}>
+                <form action={updateReferralSettingsAction} style={{ display: "grid", gap: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
+                    <label style={labelStyle}>
+                      Награда приглашающему (дни)
+                      <input
+                        name="inviterBonusDays"
+                        type="number"
+                        min={1}
+                        step={1}
+                        defaultValue={referralSettings.inviterBonusDays}
+                        required
+                        style={inputStyle}
+                      />
+                    </label>
+                    <label style={labelStyle}>
+                      Награда приглашенному (дни)
+                      <input
+                        name="invitedBonusDays"
+                        type="number"
+                        min={1}
+                        step={1}
+                        defaultValue={referralSettings.invitedBonusDays}
+                        required
+                        style={inputStyle}
+                      />
+                    </label>
+                  </div>
+
+                  <button type="submit" style={smallButtonStyle}>
+                    Сохранить награды
+                  </button>
+                </form>
+              </article>
             </>
           ) : null}
         </section>
