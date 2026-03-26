@@ -139,7 +139,7 @@ export default async function AdminPage({
 }) {
   const session = await auth();
   const role = session?.user?.role;
-  if (!session?.user || (role !== "OWNER" && role !== "ADMIN")) {
+  if (!session?.user || role !== "OWNER") {
     redirect("/account");
   }
   const params = await Promise.resolve(searchParams ?? {});
@@ -187,7 +187,7 @@ export default async function AdminPage({
     "use server";
 
     const actor = await auth();
-    if (!actor?.user || (actor.user.role !== "OWNER" && actor.user.role !== "ADMIN")) {
+    if (!actor?.user || actor.user.role !== "OWNER") {
       throw new Error("Нет прав для управления тарифами.");
     }
 
@@ -290,7 +290,7 @@ export default async function AdminPage({
     "use server";
 
     const actor = await auth();
-    if (!actor?.user || (actor.user.role !== "OWNER" && actor.user.role !== "ADMIN")) {
+    if (!actor?.user || actor.user.role !== "OWNER") {
       throw new Error("Нет прав для управления тарифами.");
     }
 
@@ -317,7 +317,7 @@ export default async function AdminPage({
     "use server";
 
     const actor = await auth();
-    if (!actor?.user || (actor.user.role !== "OWNER" && actor.user.role !== "ADMIN")) {
+    if (!actor?.user || actor.user.role !== "OWNER") {
       throw new Error("Нет прав для удаления тарифов.");
     }
 
@@ -350,7 +350,7 @@ export default async function AdminPage({
     "use server";
 
     const actor = await auth();
-    if (!actor?.user || (actor.user.role !== "OWNER" && actor.user.role !== "ADMIN")) {
+    if (!actor?.user || actor.user.role !== "OWNER") {
       throw new Error("Нет прав для синхронизации с Remnawave.");
     }
 
@@ -398,7 +398,7 @@ export default async function AdminPage({
     "use server";
 
     const actor = await auth();
-    if (!actor?.user || (actor.user.role !== "OWNER" && actor.user.role !== "ADMIN")) {
+    if (!actor?.user || actor.user.role !== "OWNER") {
       throw new Error("Нет прав для генерации промокодов.");
     }
 
@@ -563,7 +563,7 @@ export default async function AdminPage({
   return (
     <main className="container" style={{ padding: "36px 0 64px" }}>
       <h1 style={{ marginTop: 0 }}>Админ-панель</h1>
-      <p>Только для OWNER/ADMIN.</p>
+      <p>Только для OWNER.</p>
 
       <div className="panel-layout" style={{ marginTop: 24 }}>
         <aside className="panel-sidebar">

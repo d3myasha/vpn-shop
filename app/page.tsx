@@ -1,5 +1,3 @@
-import Link from "next/link";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 function formatRub(value: number) {
@@ -23,8 +21,6 @@ function getPlanGroupKey(code: string) {
 }
 
 export default async function HomePage() {
-  const session = await auth();
-  const isAdmin = session?.user?.role === "OWNER" || session?.user?.role === "ADMIN";
   const plans = await prisma.plan.findMany({
     where: { isActive: true },
     orderBy: [{ title: "asc" }, { durationDays: "asc" }],
@@ -81,29 +77,6 @@ export default async function HomePage() {
       <header style={{ marginBottom: 24 }}>
         <h1 style={{ margin: 0, fontSize: 36 }}>VPN подписки</h1>
         <p style={{ margin: "8px 0 0", color: "#334155" }}>Безлимитный трафик, автоматическая выдача ссылки после оплаты.</p>
-        <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {!session?.user ? (
-            <>
-              <Link href="/login" style={navLinkStyle}>
-                Вход
-              </Link>
-              <Link href="/register" style={navLinkStyle}>
-                Регистрация
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link href="/account" style={navLinkStyle}>
-                Личный кабинет
-              </Link>
-              {isAdmin ? (
-                <Link href="/admin" style={navLinkStyle}>
-                  Админка
-                </Link>
-              ) : null}
-            </>
-          )}
-        </div>
       </header>
 
       <section
@@ -193,12 +166,3 @@ export default async function HomePage() {
     </main>
   );
 }
-
-const navLinkStyle: React.CSSProperties = {
-  display: "inline-block",
-  border: "1px solid #cbd5e1",
-  borderRadius: 10,
-  padding: "8px 12px",
-  background: "#fff",
-  fontSize: 14
-};
