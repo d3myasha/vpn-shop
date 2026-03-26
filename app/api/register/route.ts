@@ -4,11 +4,14 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { generateUniqueReferralCode } from "@/lib/users";
 import { logger } from "@/lib/logger";
+import { isEmailDomainAllowed } from "@/lib/email-policy";
+import { verifyRegistrationCode } from "@/lib/email-verification";
 
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
-  referralCode: z.string().trim().toUpperCase().max(32).optional()
+  referralCode: z.string().trim().toUpperCase().max(32).optional(),
+  verificationCode: z.string().trim().length(6).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -20,9 +23,23 @@ export async function POST(request: NextRequest) {
     }
 
     const email = parsed.data.email.toLowerCase();
+    if (!isEmailDomainAllowed(email)) {
+      return NextResponse.json({ error: "Разрешены только популярные почтовые сервисы" }, { status: 400 });
+    }
+
     const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
     if (existing) {
       return NextResponse.json({ error: "Пользователь с таким email уже существует" }, { status: 409 });
+    }
+
+    const verificationCode = parsed.data.verificationCode?.trim();
+    if (!verificationCode) {
+      return NextResponse.json({ error: "Нужен код подтверждения из письма" }, { status: 400 });
+    }
+
+    const verification = await verifyRegistrationCode({ email, code: verificationCode });
+    if (!verification.ok) {
+      return NextResponse.json({ error: verification.reason }, { status: 400 });
     }
 
     let referredByUserId: string | null = null;
