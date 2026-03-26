@@ -14,6 +14,17 @@ export type RemnawaveSquadOption = {
   name: string;
 };
 
+export type RemnawaveDevice = {
+  hwid: string;
+  userUuid: string;
+  platform: string;
+  osVersion: string;
+  deviceModel: string;
+  userAgent: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type RemnawaveSubscriptionResponse = {
   response?: {
     subscriptionUrl?: string;
@@ -26,6 +37,13 @@ type RemnawaveUsersByEmailResponse = {
 
 type RemnawaveUserResponse = {
   response?: RemnawaveUser;
+};
+
+type RemnawaveUserHwidDevicesResponse = {
+  response?: {
+    total?: number;
+    devices?: RemnawaveDevice[];
+  };
 };
 
 type RemnawaveInternalSquadsResponse = {
@@ -133,6 +151,27 @@ async function getUserByEmail(email: string) {
   });
 
   return result.response?.[0] ?? null;
+}
+
+export async function resolveRemnawaveUserUuidByEmail(email: string) {
+  const user = await getUserByEmail(email);
+  return user?.uuid ?? null;
+}
+
+export async function getUserHwidDevices(userUuid: string) {
+  const encoded = encodeURIComponent(userUuid);
+  const result = await remnawaveRequest<RemnawaveUserHwidDevicesResponse>(`/api/hwid/devices/${encoded}`, {
+    method: "GET"
+  });
+
+  return result.response?.devices ?? [];
+}
+
+export async function deleteUserHwidDevice(userUuid: string, hwid: string) {
+  await remnawaveRequest<RemnawaveUserHwidDevicesResponse>("/api/hwid/devices/delete", {
+    method: "POST",
+    body: JSON.stringify({ userUuid, hwid })
+  });
 }
 
 async function createUser(params: {

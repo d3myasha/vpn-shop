@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { deleteUserHwidDevice, getUserHwidDevices, resolveRemnawaveUserUuidByEmail, type RemnawaveDevice } from "@/lib/remnawave";
 
 const ACCOUNT_TABS = ["subscription", "payments", "referrals"] as const;
 
@@ -29,6 +31,60 @@ function accountTabHref(tab: AccountTab) {
   return `/account?tab=${tab}`;
 }
 
+function getDeviceActionMessage(action: string | undefined) {
+  if (action === "deleted") {
+    return { text: "Устройство удалено.", color: "#166534" };
+  }
+  if (action === "delete_failed") {
+    return { text: "Не удалось удалить устройство. Попробуйте еще раз.", color: "#b91c1c" };
+  }
+  if (action === "profile_missing") {
+    return { text: "Профиль Remnawave пока не найден. Попробуйте позже.", color: "#92400e" };
+  }
+  if (action === "no_subscription") {
+    return { text: "Подписка не найдена.", color: "#92400e" };
+  }
+
+  return null;
+}
+
+function formatDeviceLabel(device: RemnawaveDevice) {
+  const parts = [device.deviceModel, device.platform, device.osVersion].map((part) => part?.trim()).filter(Boolean);
+  if (parts.length === 0) {
+    return "Неизвестное устройство";
+  }
+  return parts.join(" • ");
+}
+
+function shortHwid(hwid: string) {
+  if (hwid.length <= 16) {
+    return hwid;
+  }
+  return `${hwid.slice(0, 8)}...${hwid.slice(-8)}`;
+}
+
+async function resolveSubscriptionRemnawaveUserUuid(params: {
+  subscriptionId: string;
+  remnawaveProfileId: string | null;
+  email: string;
+}) {
+  if (params.remnawaveProfileId) {
+    return params.remnawaveProfileId;
+  }
+
+  const resolvedUuid = await resolveRemnawaveUserUuidByEmail(params.email);
+  if (!resolvedUuid) {
+    return null;
+  }
+
+  await prisma.subscription.update({
+    where: { id: params.subscriptionId },
+    data: { remnawaveProfileId: resolvedUuid },
+  });
+
+  return resolvedUuid;
+}
+
 export default async function AccountPage({
   searchParams,
 }: {
@@ -41,6 +97,53 @@ export default async function AccountPage({
 
   const params = await Promise.resolve(searchParams ?? {});
   const activeTab = resolveAccountTab(readQueryValue(params.tab));
+  const deviceActionMessage = getDeviceActionMessage(readQueryValue(params.deviceAction));
+
+  async function deleteDeviceAction(formData: FormData) {
+    "use server";
+
+    const actor = await auth();
+    if (!actor?.user?.id) {
+      redirect("/login");
+    }
+
+    const hwid = String(formData.get("hwid") ?? "").trim();
+    if (!hwid) {
+      redirect("/account?tab=subscription&deviceAction=delete_failed");
+    }
+
+    const [actorUser, actorSubscription] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: actor.user.id },
+        select: { email: true },
+      }),
+      prisma.subscription.findUnique({
+        where: { userId: actor.user.id },
+        select: { id: true, remnawaveProfileId: true },
+      }),
+    ]);
+
+    if (!actorUser?.email || !actorSubscription) {
+      redirect("/account?tab=subscription&deviceAction=no_subscription");
+    }
+
+    const userUuid = await resolveSubscriptionRemnawaveUserUuid({
+      subscriptionId: actorSubscription.id,
+      remnawaveProfileId: actorSubscription.remnawaveProfileId,
+      email: actorUser.email,
+    });
+    if (!userUuid) {
+      redirect("/account?tab=subscription&deviceAction=profile_missing");
+    }
+
+    try {
+      await deleteUserHwidDevice(userUuid, hwid);
+      revalidatePath("/account");
+      redirect("/account?tab=subscription&deviceAction=deleted");
+    } catch {
+      redirect("/account?tab=subscription&deviceAction=delete_failed");
+    }
+  }
 
   const [user, subscription, payments, invitedCount, rewardsCount, invitedUsers, inviterRewards] = await Promise.all([
     prisma.user.findUnique({
@@ -87,6 +190,28 @@ export default async function AccountPage({
     }),
   ]);
   const rewardsByInvitedUserId = new Map(inviterRewards.map((reward) => [reward.invitedUserId, reward]));
+
+  let remnawaveDevices: RemnawaveDevice[] = [];
+  let remnawaveUserUuid: string | null = null;
+  let devicesLoadError: string | null = null;
+
+  if (subscription && user?.email) {
+    try {
+      remnawaveUserUuid = await resolveSubscriptionRemnawaveUserUuid({
+        subscriptionId: subscription.id,
+        remnawaveProfileId: subscription.remnawaveProfileId,
+        email: user.email,
+      });
+
+      if (remnawaveUserUuid) {
+        remnawaveDevices = await getUserHwidDevices(remnawaveUserUuid);
+      }
+    } catch {
+      devicesLoadError = "Не удалось загрузить устройства из Remnawave.";
+    }
+  }
+
+  const freeDeviceSlots = subscription ? Math.max(0, subscription.deviceLimitSnapshot - remnawaveDevices.length) : 0;
 
   return (
     <main className="container" style={{ padding: "36px 0 64px" }}>
@@ -144,6 +269,7 @@ export default async function AccountPage({
           {activeTab === "subscription" ? (
             <>
               <h2 style={{ marginTop: 0 }}>Подписка</h2>
+              {deviceActionMessage ? <p style={{ marginTop: 0, color: deviceActionMessage.color }}>{deviceActionMessage.text}</p> : null}
               {!subscription ? <p>Подписки пока нет.</p> : null}
               <div style={{ display: "grid", gap: 10 }}>
                 {subscription ? (
@@ -158,6 +284,46 @@ export default async function AccountPage({
                   </article>
                 ) : null}
               </div>
+
+              {subscription ? (
+                <>
+                  <h3 style={{ marginTop: 20 }}>Мои устройства</h3>
+                  {devicesLoadError ? <p style={{ color: "#b91c1c", marginTop: 0 }}>{devicesLoadError}</p> : null}
+                  {!remnawaveUserUuid ? <p style={{ marginTop: 0 }}>Профиль Remnawave пока не найден.</p> : null}
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 10 }}>
+                    <article style={cardStyle}>
+                      <p style={{ margin: "0 0 6px", color: "#64748b" }}>Лимит устройств</p>
+                      <strong style={{ fontSize: 24 }}>{subscription.deviceLimitSnapshot}</strong>
+                    </article>
+                    <article style={cardStyle}>
+                      <p style={{ margin: "0 0 6px", color: "#64748b" }}>Добавлено устройств</p>
+                      <strong style={{ fontSize: 24 }}>{remnawaveDevices.length}</strong>
+                    </article>
+                    <article style={cardStyle}>
+                      <p style={{ margin: "0 0 6px", color: "#64748b" }}>Свободно</p>
+                      <strong style={{ fontSize: 24 }}>{freeDeviceSlots}</strong>
+                    </article>
+                  </div>
+
+                  {remnawaveUserUuid && remnawaveDevices.length === 0 ? <p>Устройств пока нет.</p> : null}
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {remnawaveDevices.map((device) => (
+                      <article key={device.hwid} style={cardStyle}>
+                        <p style={{ margin: "0 0 4px", fontWeight: 600 }}>{formatDeviceLabel(device)}</p>
+                        <p style={{ margin: "4px 0", color: "#475569" }}>HWID: {shortHwid(device.hwid)}</p>
+                        <p style={{ margin: "4px 0" }}>Добавлено: {new Date(device.createdAt).toLocaleString("ru-RU")}</p>
+                        <form action={deleteDeviceAction} style={{ marginTop: 8 }}>
+                          <input type="hidden" name="hwid" value={device.hwid} />
+                          <button type="submit" style={dangerButtonStyle}>
+                            Удалить устройство
+                          </button>
+                        </form>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              ) : null}
             </>
           ) : null}
 
@@ -241,4 +407,13 @@ const cardStyle: React.CSSProperties = {
   borderRadius: 12,
   padding: 12,
   background: "#fff"
+};
+
+const dangerButtonStyle: React.CSSProperties = {
+  border: "1px solid #ef4444",
+  borderRadius: 8,
+  background: "#fff",
+  color: "#b91c1c",
+  padding: "6px 10px",
+  cursor: "pointer"
 };
