@@ -122,20 +122,6 @@ async function HomePageView({ errorMessage, isAuthenticated }: { errorMessage: s
       <header style={{ marginBottom: 28, textAlign: "center" }}>
         <h1 style={{ margin: 0, fontSize: 36 }}>VPN Shop</h1>
         <p style={{ margin: "8px 0 0", color: "#334155" }}>Стабильный VPN с удобным управлением подпиской.</p>
-        <nav style={{ display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
-          <a href="#about" style={sectionLinkStyle}>
-            О нас
-          </a>
-          <a href="#features" style={sectionLinkStyle}>
-            Функции
-          </a>
-          <a href="#tariffs" style={sectionLinkStyle}>
-            Тарифы
-          </a>
-          <a href="#reviews" style={sectionLinkStyle}>
-            Отзывы
-          </a>
-        </nav>
         {errorMessage ? <p style={{ margin: "10px 0 0", color: "#b91c1c", fontWeight: 600 }}>{errorMessage}</p> : null}
       </header>
 
@@ -234,14 +220,6 @@ const sectionTextStyle: React.CSSProperties = {
   margin: 0,
   color: "#334155",
   lineHeight: 1.6
-};
-
-const sectionLinkStyle: React.CSSProperties = {
-  border: "1px solid #cbd5e1",
-  borderRadius: 999,
-  padding: "6px 12px",
-  background: "#fff",
-  fontSize: 14
 };
 
 const featureCardStyle: React.CSSProperties = {
