@@ -3,10 +3,16 @@ import { NextRequest } from "next/server";
 
 const updateMock = vi.fn();
 const findUniqueMock = vi.fn();
+const referralSettingsFindUniqueMock = vi.fn();
+const referralSettingsCreateMock = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     payment: { updateMany: vi.fn() },
+    referralSettings: {
+      findUnique: referralSettingsFindUniqueMock,
+      create: referralSettingsCreateMock
+    },
     subscription: {
       findUnique: findUniqueMock,
       update: updateMock
@@ -55,6 +61,16 @@ describe("POST /api/webhooks/yookassa success flow", () => {
     process.env.REMNAWAVE_API_HEADER_PREFIX = "Bearer";
     process.env.REFERRAL_INVITER_BONUS_DAYS = "7";
     process.env.REFERRAL_INVITED_BONUS_DAYS = "3";
+    referralSettingsFindUniqueMock.mockResolvedValue({
+      id: "default",
+      inviterBonusDays: 7,
+      invitedBonusDays: 3
+    });
+    referralSettingsCreateMock.mockResolvedValue({
+      id: "default",
+      inviterBonusDays: 7,
+      invitedBonusDays: 3
+    });
 
     getYooKassaPaymentMock.mockResolvedValue({
       id: "payment_1",

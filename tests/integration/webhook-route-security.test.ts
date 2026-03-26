@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     payment: { updateMany: vi.fn() },
+    referralSettings: { findUnique: vi.fn(), create: vi.fn() },
     subscription: { findUnique: vi.fn(), update: vi.fn() }
   }
 }));

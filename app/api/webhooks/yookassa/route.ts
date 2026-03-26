@@ -6,6 +6,7 @@ import { getYooKassaPayment } from "@/lib/yookassa";
 import { syncRemnawaveSubscription } from "@/lib/remnawave";
 import { assertIpAllowed, assertRateLimit, getRequestIp } from "@/lib/webhook-security";
 import { logger } from "@/lib/logger";
+import { getOrCreateReferralSettings } from "@/lib/referral-settings";
 
 type YooWebhookPayload = {
   event?: string;
@@ -29,7 +30,7 @@ function toRubInt(value: string | undefined) {
 
 export async function POST(request: NextRequest) {
   try {
-    const env = getEnv();
+    getEnv();
     const sourceIp = getRequestIp(request.headers);
     const ipAllowlistEnabled = process.env.YOOKASSA_WEBHOOK_IP_ALLOWLIST_ENABLED !== "false";
 
@@ -82,12 +83,13 @@ export async function POST(request: NextRequest) {
     }
 
     const successfulAmountRub = toRubInt(verifiedPayment.amount.value);
+    const referralSettings = await getOrCreateReferralSettings();
     const activationResult = await activatePaymentAndSubscription({
       providerPaymentId: paymentId,
       successfulAmountRub,
       planCode,
-      inviterBonusDays: env.REFERRAL_INVITER_BONUS_DAYS,
-      invitedBonusDays: env.REFERRAL_INVITED_BONUS_DAYS
+      inviterBonusDays: referralSettings.inviterBonusDays,
+      invitedBonusDays: referralSettings.invitedBonusDays
     });
 
     if (!activationResult.subscriptionId) {
