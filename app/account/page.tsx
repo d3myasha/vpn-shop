@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
-const ACCOUNT_TABS = ["subscription", "payments"] as const;
+const ACCOUNT_TABS = ["subscription", "payments", "referrals"] as const;
 
 type AccountTab = (typeof ACCOUNT_TABS)[number];
 
@@ -42,7 +42,7 @@ export default async function AccountPage({
   const params = await Promise.resolve(searchParams ?? {});
   const activeTab = resolveAccountTab(readQueryValue(params.tab));
 
-  const [user, subscription, payments] = await Promise.all([
+  const [user, subscription, payments, invitedCount, rewardsCount, invitedUsers, inviterRewards] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
@@ -60,7 +60,33 @@ export default async function AccountPage({
       orderBy: { createdAt: "desc" },
       take: 20,
     }),
+    prisma.user.count({
+      where: { referredByUserId: session.user.id },
+    }),
+    prisma.referralReward.count({
+      where: { inviterUserId: session.user.id },
+    }),
+    prisma.user.findMany({
+      where: { referredByUserId: session.user.id },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        email: true,
+        createdAt: true,
+      },
+    }),
+    prisma.referralReward.findMany({
+      where: { inviterUserId: session.user.id },
+      orderBy: { appliedAt: "desc" },
+      select: {
+        invitedUserId: true,
+        inviterBonusDays: true,
+        invitedBonusDays: true,
+        appliedAt: true,
+      },
+    }),
   ]);
+  const rewardsByInvitedUserId = new Map(inviterRewards.map((reward) => [reward.invitedUserId, reward]));
 
   return (
     <main className="container" style={{ padding: "36px 0 64px" }}>
@@ -93,6 +119,9 @@ export default async function AccountPage({
             <Link href={accountTabHref("payments")} className={`panel-nav-link ${activeTab === "payments" ? "is-active" : ""}`}>
               История платежей
             </Link>
+            <Link href={accountTabHref("referrals")} className={`panel-nav-link ${activeTab === "referrals" ? "is-active" : ""}`}>
+              Рефералка
+            </Link>
           </nav>
         </aside>
 
@@ -106,6 +135,9 @@ export default async function AccountPage({
             </Link>
             <Link href={accountTabHref("payments")} className={`panel-nav-link ${activeTab === "payments" ? "is-active" : ""}`}>
               Платежи
+            </Link>
+            <Link href={accountTabHref("referrals")} className={`panel-nav-link ${activeTab === "referrals" ? "is-active" : ""}`}>
+              Рефералка
             </Link>
           </nav>
 
@@ -143,6 +175,48 @@ export default async function AccountPage({
                     <p style={{ margin: "4px 0" }}>Дата: {new Date(payment.createdAt).toLocaleString("ru-RU")}</p>
                   </article>
                 ))}
+              </div>
+            </>
+          ) : null}
+
+          {activeTab === "referrals" ? (
+            <>
+              <h2 style={{ marginTop: 0 }}>Реферальная система</h2>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 12 }}>
+                <article style={cardStyle}>
+                  <p style={{ margin: "0 0 6px", color: "#64748b" }}>Приглашено пользователей</p>
+                  <strong style={{ fontSize: 28 }}>{invitedCount}</strong>
+                </article>
+                <article style={cardStyle}>
+                  <p style={{ margin: "0 0 6px", color: "#64748b" }}>Получено наград</p>
+                  <strong style={{ fontSize: 28 }}>{rewardsCount}</strong>
+                </article>
+              </div>
+
+              <h3 style={{ marginTop: 0 }}>История приглашений</h3>
+              {invitedUsers.length === 0 ? <p>Вы пока никого не пригласили.</p> : null}
+              <div style={{ display: "grid", gap: 10 }}>
+                {invitedUsers.map((invitedUser) => {
+                  const reward = rewardsByInvitedUserId.get(invitedUser.id);
+
+                  return (
+                    <article key={invitedUser.id} style={cardStyle}>
+                      <p style={{ margin: 0, fontWeight: 600 }}>{invitedUser.email}</p>
+                      <p style={{ margin: "4px 0" }}>Дата регистрации: {new Date(invitedUser.createdAt).toLocaleString("ru-RU")}</p>
+                      {reward ? (
+                        <>
+                          <p style={{ margin: "4px 0", color: "#166534" }}>Статус: Награда начислена</p>
+                          <p style={{ margin: "4px 0" }}>Дата начисления: {new Date(reward.appliedAt).toLocaleString("ru-RU")}</p>
+                          <p style={{ margin: "4px 0" }}>
+                            Бонусы: вам +{reward.inviterBonusDays} дн., приглашенному +{reward.invitedBonusDays} дн.
+                          </p>
+                        </>
+                      ) : (
+                        <p style={{ margin: "4px 0", color: "#92400e" }}>Статус: Ожидает первую успешную оплату</p>
+                      )}
+                    </article>
+                  );
+                })}
               </div>
             </>
           ) : null}
