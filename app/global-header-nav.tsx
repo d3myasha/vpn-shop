@@ -38,14 +38,9 @@ export function GlobalHeaderNav({ isAuthenticated, isOwner }: GlobalHeaderNavPro
       ) : null}
 
       {!isAuthenticated ? (
-        <>
-          <Link href="/login" className={`global-nav-link ${isActive(pathname, "/login") ? "is-active" : ""}`}>
-            Вход
-          </Link>
-          <Link href="/register" className={`global-nav-link ${isActive(pathname, "/register") ? "is-active" : ""}`}>
-            Регистрация
-          </Link>
-        </>
+        <Link href="/login" className={`global-nav-link ${isActive(pathname, "/login") ? "is-active" : ""}`}>
+          Вход
+        </Link>
       ) : null}
     </nav>
   );
