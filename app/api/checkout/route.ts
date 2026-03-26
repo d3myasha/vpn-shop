@@ -11,6 +11,17 @@ type CheckoutInput = {
   referralCode?: string;
 };
 
+function getPublicOrigin(request: NextRequest) {
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  if (forwardedHost) {
+    const proto = forwardedProto ?? "https";
+    return `${proto}://${forwardedHost}`;
+  }
+
+  return request.nextUrl.origin;
+}
+
 export async function POST(request: NextRequest) {
   const contentType = request.headers.get("content-type") ?? "";
 
@@ -46,7 +57,8 @@ export async function POST(request: NextRequest) {
     const session = await auth();
     if (!session?.user?.id) {
       if (wantsRedirect) {
-        return NextResponse.redirect(new URL("/login?next=%2F", request.url), 303);
+        const origin = getPublicOrigin(request);
+        return NextResponse.redirect(new URL("/login?next=%2F", origin), 303);
       }
       return NextResponse.json({ error: "Требуется авторизация" }, { status: 401 });
     }
@@ -69,7 +81,7 @@ export async function POST(request: NextRequest) {
     const amountRub = plan.priceRub - discountRub;
 
     const idempotenceKey = crypto.randomUUID();
-    const returnUrl = new URL("/account", request.url).toString();
+    const returnUrl = new URL("/account", getPublicOrigin(request)).toString();
     const pending = await prisma.payment.create({
       data: {
         userId: user.id,
