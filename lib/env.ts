@@ -3,6 +3,7 @@ import { z } from "zod";
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   NEXTAUTH_SECRET: z.string().min(1).optional(),
+  CHECKOUT_ENABLED: z.enum(["true", "false"]).default("true"),
   YOOKASSA_SHOP_ID: z.string().min(1),
   YOOKASSA_SECRET_KEY: z.string().min(1),
   YOOKASSA_RETURN_URL: z.string().url(),

@@ -23,6 +23,7 @@ function getPublicOrigin(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const checkoutEnabled = process.env.CHECKOUT_ENABLED !== "false";
   const contentType = request.headers.get("content-type") ?? "";
 
   let input: CheckoutInput = {};
@@ -43,6 +44,14 @@ export async function POST(request: NextRequest) {
   }
 
   const wantsRedirect = contentType.includes("application/x-www-form-urlencoded");
+  const origin = getPublicOrigin(request);
+
+  if (!checkoutEnabled) {
+    if (wantsRedirect) {
+      return NextResponse.redirect(new URL("/?checkout=disabled", origin), 303);
+    }
+    return NextResponse.json({ error: "Покупка и оплата временно недоступна" }, { status: 503 });
+  }
 
   try {
     const [plan, promo] = await Promise.all([
@@ -57,7 +66,6 @@ export async function POST(request: NextRequest) {
     const session = await auth();
     if (!session?.user?.id) {
       if (wantsRedirect) {
-        const origin = getPublicOrigin(request);
         return NextResponse.redirect(new URL("/login?next=%2F", origin), 303);
       }
       return NextResponse.json({ error: "Требуется авторизация" }, { status: 401 });
@@ -81,7 +89,7 @@ export async function POST(request: NextRequest) {
     const amountRub = plan.priceRub - discountRub;
 
     const idempotenceKey = crypto.randomUUID();
-    const returnUrl = new URL("/account", getPublicOrigin(request)).toString();
+    const returnUrl = new URL("/account", origin).toString();
     const pending = await prisma.payment.create({
       data: {
         userId: user.id,
@@ -133,7 +141,7 @@ export async function POST(request: NextRequest) {
     logger.error("checkout_failed", error, { statusCode, planCode, route: "/api/checkout" });
 
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL(`/?error=${encodeURIComponent(message)}`, request.url), 303);
+      return NextResponse.redirect(new URL(`/?error=${encodeURIComponent(message)}`, origin), 303);
     }
 
     return NextResponse.json({ error: message }, { status: statusCode });

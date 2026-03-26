@@ -20,7 +20,28 @@ function getPlanGroupKey(code: string) {
   return match[1];
 }
 
-export default async function HomePage() {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function readQueryValue(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+
+  return value;
+}
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams?: SearchParams | Promise<SearchParams>;
+}) {
+  const params = await Promise.resolve(searchParams ?? {});
+  const checkoutState = readQueryValue(params.checkout);
+  const errorMessage = checkoutState === "disabled" ? "Покупка и оплата временно недоступна." : null;
+  return <HomePageView errorMessage={errorMessage} />;
+}
+
+async function HomePageView({ errorMessage }: { errorMessage: string | null }) {
   const plans = await prisma.plan.findMany({
     where: { isActive: true },
     orderBy: [{ title: "asc" }, { durationDays: "asc" }],
@@ -77,6 +98,7 @@ export default async function HomePage() {
       <header style={{ marginBottom: 24 }}>
         <h1 style={{ margin: 0, fontSize: 36 }}>VPN подписки</h1>
         <p style={{ margin: "8px 0 0", color: "#334155" }}>Безлимитный трафик, автоматическая выдача ссылки после оплаты.</p>
+        {errorMessage ? <p style={{ margin: "10px 0 0", color: "#b91c1c", fontWeight: 600 }}>{errorMessage}</p> : null}
       </header>
 
       <section
