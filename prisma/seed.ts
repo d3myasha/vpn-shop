@@ -32,6 +32,16 @@ const plans: SeedPlan[] = [
 ];
 
 async function main() {
+  await prisma.referralSettings.upsert({
+    where: { id: "default" },
+    create: {
+      id: "default",
+      inviterBonusDays: 7,
+      invitedBonusDays: 3
+    },
+    update: {}
+  });
+
   for (const plan of plans) {
     await prisma.plan.upsert({
       where: { code: plan.code },

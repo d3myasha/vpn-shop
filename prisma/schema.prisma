@@ -144,3 +144,11 @@ model ReferralReward {
   inviter User @relation("InviterRewards", fields: [inviterUserId], references: [id], onDelete: Cascade)
   invited User @relation("InvitedRewards", fields: [invitedUserId], references: [id], onDelete: Cascade)
 }
+
+model ReferralSettings {
+  id               String   @id
+  inviterBonusDays Int
+  invitedBonusDays Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
