@@ -217,7 +217,7 @@ export default async function AccountPage({
     <main className="container" style={{ padding: "36px 0 64px" }}>
       <h1 style={{ marginTop: 0 }}>Личный кабинет</h1>
       <p style={{ marginBottom: 6 }}>Email: {user?.email}</p>
-      <p style={{ marginBottom: 6 }}>Роль: {user?.role}</p>
+      {user?.role && user.role !== "CUSTOMER" ? <p style={{ marginBottom: 6 }}>Роль: {user.role}</p> : null}
       <p style={{ marginBottom: 18 }}>Ваш рефкод: {user?.referralCode}</p>
 
       <form
