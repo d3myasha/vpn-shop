@@ -1,12 +1,46 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
-export default async function AccountPage() {
+const ACCOUNT_TABS = ["subscription", "payments"] as const;
+
+type AccountTab = (typeof ACCOUNT_TABS)[number];
+
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function resolveAccountTab(rawTab: string | undefined): AccountTab {
+  if (rawTab && ACCOUNT_TABS.includes(rawTab as AccountTab)) {
+    return rawTab as AccountTab;
+  }
+
+  return "subscription";
+}
+
+function readQueryValue(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+
+  return value;
+}
+
+function accountTabHref(tab: AccountTab) {
+  return `/account?tab=${tab}`;
+}
+
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams?: SearchParams | Promise<SearchParams>;
+}) {
   const session = await auth();
   if (!session?.user?.id) {
     redirect("/login");
   }
+
+  const params = await Promise.resolve(searchParams ?? {});
+  const activeTab = resolveAccountTab(readQueryValue(params.tab));
 
   const [user, subscription, payments] = await Promise.all([
     prisma.user.findUnique({
@@ -14,8 +48,8 @@ export default async function AccountPage() {
       select: {
         email: true,
         role: true,
-        referralCode: true
-      }
+        referralCode: true,
+      },
     }),
     prisma.subscription.findUnique({
       where: { userId: session.user.id },
@@ -24,8 +58,8 @@ export default async function AccountPage() {
     prisma.payment.findMany({
       where: { userId: session.user.id },
       orderBy: { createdAt: "desc" },
-      take: 20
-    })
+      take: 20,
+    }),
   ]);
 
   return (
@@ -46,34 +80,73 @@ export default async function AccountPage() {
         </button>
       </form>
 
-      <h2 style={{ marginTop: 26 }}>Подписки</h2>
-      {!subscription ? <p>Подписки пока нет.</p> : null}
-      <div style={{ display: "grid", gap: 10 }}>
-        {subscription ? (
-          <article key={subscription.id} style={cardStyle}>
-            <p style={{ margin: 0, fontWeight: 600 }}>{subscription.plan?.title ?? "IMPORTED / NONE"}</p>
-            <p style={{ margin: "4px 0" }}>Статус: {subscription.status}</p>
-            <p style={{ margin: "4px 0" }}>До: {new Date(subscription.expiresAt).toLocaleString("ru-RU")}</p>
-            <p style={{ margin: "4px 0" }}>Лимит устройств: {subscription.deviceLimitSnapshot}</p>
-            <p style={{ margin: "4px 0", wordBreak: "break-all" }}>
-              Ссылка подписки: {subscription.remnawaveSubscription ?? "еще не выдана"}
-            </p>
-          </article>
-        ) : null}
-      </div>
+      <div className="panel-layout" style={{ marginTop: 24 }}>
+        <aside className="panel-sidebar">
+          <p className="panel-sidebar-title">Разделы</p>
+          <nav className="panel-nav" aria-label="Навигация кабинета">
+            <Link
+              href={accountTabHref("subscription")}
+              className={`panel-nav-link ${activeTab === "subscription" ? "is-active" : ""}`}
+            >
+              Подписка
+            </Link>
+            <Link href={accountTabHref("payments")} className={`panel-nav-link ${activeTab === "payments" ? "is-active" : ""}`}>
+              История платежей
+            </Link>
+          </nav>
+        </aside>
 
-      <h2 style={{ marginTop: 26 }}>История платежей</h2>
-      {payments.length === 0 ? <p>Платежей пока нет.</p> : null}
-      <div style={{ display: "grid", gap: 10 }}>
-        {payments.map((payment) => (
-          <article key={payment.id} style={cardStyle}>
-            <p style={{ margin: 0, fontWeight: 600 }}>{payment.amountRub} ₽</p>
-            <p style={{ margin: "4px 0" }}>Статус: {payment.status}</p>
-            <p style={{ margin: "4px 0" }}>Скидка: {payment.discountRub} ₽</p>
-            <p style={{ margin: "4px 0" }}>Провайдер: {payment.provider}</p>
-            <p style={{ margin: "4px 0" }}>Дата: {new Date(payment.createdAt).toLocaleString("ru-RU")}</p>
-          </article>
-        ))}
+        <section className="panel-content">
+          <nav className="panel-mobile-tabs" aria-label="Навигация кабинета (мобильная)">
+            <Link
+              href={accountTabHref("subscription")}
+              className={`panel-nav-link ${activeTab === "subscription" ? "is-active" : ""}`}
+            >
+              Подписка
+            </Link>
+            <Link href={accountTabHref("payments")} className={`panel-nav-link ${activeTab === "payments" ? "is-active" : ""}`}>
+              Платежи
+            </Link>
+          </nav>
+
+          {activeTab === "subscription" ? (
+            <>
+              <h2 style={{ marginTop: 0 }}>Подписка</h2>
+              {!subscription ? <p>Подписки пока нет.</p> : null}
+              <div style={{ display: "grid", gap: 10 }}>
+                {subscription ? (
+                  <article key={subscription.id} style={cardStyle}>
+                    <p style={{ margin: 0, fontWeight: 600 }}>{subscription.plan?.title ?? "IMPORTED / NONE"}</p>
+                    <p style={{ margin: "4px 0" }}>Статус: {subscription.status}</p>
+                    <p style={{ margin: "4px 0" }}>До: {new Date(subscription.expiresAt).toLocaleString("ru-RU")}</p>
+                    <p style={{ margin: "4px 0" }}>Лимит устройств: {subscription.deviceLimitSnapshot}</p>
+                    <p style={{ margin: "4px 0", wordBreak: "break-all" }}>
+                      Ссылка подписки: {subscription.remnawaveSubscription ?? "еще не выдана"}
+                    </p>
+                  </article>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+
+          {activeTab === "payments" ? (
+            <>
+              <h2 style={{ marginTop: 0 }}>История платежей</h2>
+              {payments.length === 0 ? <p>Платежей пока нет.</p> : null}
+              <div style={{ display: "grid", gap: 10 }}>
+                {payments.map((payment) => (
+                  <article key={payment.id} style={cardStyle}>
+                    <p style={{ margin: 0, fontWeight: 600 }}>{payment.amountRub} ₽</p>
+                    <p style={{ margin: "4px 0" }}>Статус: {payment.status}</p>
+                    <p style={{ margin: "4px 0" }}>Скидка: {payment.discountRub} ₽</p>
+                    <p style={{ margin: "4px 0" }}>Провайдер: {payment.provider}</p>
+                    <p style={{ margin: "4px 0" }}>Дата: {new Date(payment.createdAt).toLocaleString("ru-RU")}</p>
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : null}
+        </section>
       </div>
     </main>
   );

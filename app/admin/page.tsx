@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
@@ -8,6 +9,30 @@ import { PlanLimitType, PlanTier, UserRole } from "@prisma/client";
 const ROLE_OPTIONS: UserRole[] = ["CUSTOMER", "ADMIN", "OWNER"];
 const PLAN_TIER_OPTIONS: PlanTier[] = ["SIMPLE", "EXTENDED", "SUPER", "CUSTOM"];
 const PLAN_LIMIT_OPTIONS: PlanLimitType[] = ["DEVICES", "TRAFFIC"];
+const ADMIN_TABS = ["users", "plans", "promocodes"] as const;
+
+type AdminTab = (typeof ADMIN_TABS)[number];
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function readQueryValue(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+
+  return value;
+}
+
+function resolveAdminTab(rawTab: string | undefined): AdminTab {
+  if (rawTab && ADMIN_TABS.includes(rawTab as AdminTab)) {
+    return rawTab as AdminTab;
+  }
+
+  return "users";
+}
+
+function adminTabHref(tab: AdminTab) {
+  return `/admin?tab=${tab}`;
+}
 
 function formatPlanTier(tier: PlanTier) {
   if (tier === "SIMPLE") return "Simple";
@@ -107,12 +132,18 @@ function formatPromoDiscount(discountPercent: number | null, discountRub: number
   return "—";
 }
 
-export default async function AdminPage() {
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams?: SearchParams | Promise<SearchParams>;
+}) {
   const session = await auth();
   const role = session?.user?.role;
   if (!session?.user || (role !== "OWNER" && role !== "ADMIN")) {
     redirect("/account");
   }
+  const params = await Promise.resolve(searchParams ?? {});
+  const activeTab = resolveAdminTab(readQueryValue(params.tab));
 
   async function updateUserRoleAction(formData: FormData) {
     "use server";
@@ -533,224 +564,269 @@ export default async function AdminPage() {
     <main className="container" style={{ padding: "36px 0 64px" }}>
       <h1 style={{ marginTop: 0 }}>Админ-панель</h1>
       <p>Только для OWNER/ADMIN.</p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
-        <article style={cardStyle}>
-          <p style={{ margin: "0 0 6px", color: "#64748b" }}>Пользователи</p>
-          <strong style={{ fontSize: 28 }}>{usersCount}</strong>
-        </article>
-        <article style={cardStyle}>
-          <p style={{ margin: "0 0 6px", color: "#64748b" }}>Платежи</p>
-          <strong style={{ fontSize: 28 }}>{paymentsCount}</strong>
-        </article>
-        <article style={cardStyle}>
-          <p style={{ margin: "0 0 6px", color: "#64748b" }}>Активные подписки</p>
-          <strong style={{ fontSize: 28 }}>{activeSubscriptions}</strong>
-        </article>
-      </div>
 
-      <h2 style={{ marginTop: 26 }}>Тарифы и подписки</h2>
-      {squadsLoadError ? (
-        <p style={{ color: "#b91c1c", marginTop: 0 }}>
-          Не удалось получить сквады из Remnawave: {squadsLoadError}. Можно временно вписать UUID вручную.
-        </p>
-      ) : null}
+      <div className="panel-layout" style={{ marginTop: 24 }}>
+        <aside className="panel-sidebar">
+          <p className="panel-sidebar-title">Разделы</p>
+          <nav className="panel-nav" aria-label="Навигация админки">
+            <Link href={adminTabHref("users")} className={`panel-nav-link ${activeTab === "users" ? "is-active" : ""}`}>
+              Пользователи и синхронизация
+            </Link>
+            <Link href={adminTabHref("plans")} className={`panel-nav-link ${activeTab === "plans" ? "is-active" : ""}`}>
+              Планы
+            </Link>
+            <Link href={adminTabHref("promocodes")} className={`panel-nav-link ${activeTab === "promocodes" ? "is-active" : ""}`}>
+              Промокоды
+            </Link>
+          </nav>
+        </aside>
 
-      <article style={cardStyle}>
-        <h3 style={{ marginTop: 0 }}>Добавить/обновить тариф (одна карточка, много сроков)</h3>
-        <PlanGroupForm
-          action={upsertPlanGroupAction}
-          submitLabel="Сохранить тариф"
-          internalSquads={internalSquads}
-          externalSquads={externalSquads}
-        />
-      </article>
+        <section className="panel-content">
+          <nav className="panel-mobile-tabs" aria-label="Навигация админки (мобильная)">
+            <Link href={adminTabHref("users")} className={`panel-nav-link ${activeTab === "users" ? "is-active" : ""}`}>
+              Пользователи
+            </Link>
+            <Link href={adminTabHref("plans")} className={`panel-nav-link ${activeTab === "plans" ? "is-active" : ""}`}>
+              Планы
+            </Link>
+            <Link href={adminTabHref("promocodes")} className={`panel-nav-link ${activeTab === "promocodes" ? "is-active" : ""}`}>
+              Промокоды
+            </Link>
+          </nav>
 
-      <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-        {planGroups.map((group) => (
-          <article key={group.groupCode} style={cardStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-              <div>
-                <p style={{ margin: 0, fontWeight: 700 }}>{group.title}</p>
-                <p style={{ margin: "4px 0 0", color: "#475569", fontSize: 13 }}>
-                  Код группы: {group.groupCode} | Tier: {formatPlanTier(group.tier)} | Тип: {formatPlanLimitType(group.limitType)}
-                </p>
-                <p style={{ margin: "4px 0 0", color: "#475569", fontSize: 13 }}>
-                  Варианты: {group.options.map((o) => `${formatDurationLabel(o.durationDays)} (${o.priceRub} ₽)`).join(", ")}
-                </p>
-              </div>
-              <form action={togglePlanGroupActiveAction}>
-                <input type="hidden" name="planIds" value={group.options.map((option) => option.id).join(",")} />
-                <input type="hidden" name="nextIsActive" value={String(!group.isActive)} />
-                <button type="submit" style={smallButtonStyle}>
-                  {group.isActive ? "Отключить группу" : "Включить группу"}
-                </button>
-              </form>
-            </div>
-
-            <div style={{ marginTop: 10 }}>
-              <PlanGroupForm
-                action={upsertPlanGroupAction}
-                formId={`group-form-${group.groupCode}`}
-                initial={{
-                  groupCode: group.groupCode,
-                  title: group.title,
-                  description: group.description,
-                  tier: group.tier,
-                  limitType: group.limitType,
-                  deviceLimit: group.deviceLimit,
-                  trafficLimitGb: group.trafficLimitGb,
-                  internalSquadUuid: group.internalSquadUuid,
-                  externalSquadUuid: group.externalSquadUuid,
-                  isActive: group.isActive,
-                  durationPrices: toDurationPricesText(group.options),
-                  planIds: group.options.map((option) => option.id).join(",")
-                }}
-                internalSquads={internalSquads}
-                externalSquads={externalSquads}
-              />
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <button type="submit" form={`group-form-${group.groupCode}`} style={smallButtonStyle}>
-                  Обновить тариф
-                </button>
-                <button
-                  type="submit"
-                  form={`group-form-${group.groupCode}`}
-                  formAction={deletePlanGroupAction}
-                  style={{ ...smallButtonStyle, borderColor: "#ef4444", color: "#b91c1c" }}
-                >
-                  Удалить тариф навсегда
-                </button>
-              </div>
-              <p style={{ margin: "8px 0 0", fontSize: 12, color: "#b91c1c" }}>
-                Удаление безвозвратное только для шопа: варианты тарифа удаляются, подписки сохраняются (без привязки к плану).
-              </p>
-            </div>
-          </article>
-        ))}
-      </div>
-
-      <h2 style={{ marginTop: 30 }}>Remnawave</h2>
-      <article style={cardStyle}>
-        <p style={{ margin: "0 0 10px", color: "#475569" }}>
-          Массовая синхронизация активных подписок с Remnawave (профиль, срок, лимит устройств, internal/external squad).
-        </p>
-        <form action={syncRemnawaveUsersAction}>
-          <button type="submit" style={smallButtonStyle}>
-            Синхронизировать пользователей
-          </button>
-        </form>
-      </article>
-
-      <h2 style={{ marginTop: 30 }}>Генератор промокодов</h2>
-      <article style={cardStyle}>
-        <form action={generatePromoCodesAction} style={{ display: "grid", gap: 8 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 8 }}>
-            <label style={labelStyle}>
-              Количество
-              <input name="quantity" type="number" min={1} max={100} defaultValue={1} required style={inputStyle} />
-            </label>
-            <label style={labelStyle}>
-              Префикс
-              <input name="prefix" placeholder="VPN" defaultValue="VPN" style={inputStyle} />
-            </label>
-            <label style={labelStyle}>
-              Длина кода
-              <input name="codeLength" type="number" min={4} max={24} defaultValue={8} required style={inputStyle} />
-            </label>
-            <label style={labelStyle}>
-              Тип скидки
-              <select name="discountType" defaultValue="PERCENT" style={inputStyle}>
-                <option value="PERCENT">Проценты</option>
-                <option value="RUB">Рубли</option>
-              </select>
-            </label>
-            <label style={labelStyle}>
-              Значение скидки
-              <input name="discountValue" type="number" min={1} step={1} defaultValue={10} required style={inputStyle} />
-            </label>
-            <label style={labelStyle}>
-              Макс. активаций
-              <input name="maxActivations" type="number" min={1} step={1} defaultValue={1} required style={inputStyle} />
-            </label>
-            <label style={labelStyle}>
-              Срок действия до
-              <input
-                name="validUntil"
-                type="datetime-local"
-                defaultValue={new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 16)}
-                required
-                style={inputStyle}
-              />
-            </label>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 16 }}>
+            <article style={cardStyle}>
+              <p style={{ margin: "0 0 6px", color: "#64748b" }}>Пользователи</p>
+              <strong style={{ fontSize: 28 }}>{usersCount}</strong>
+            </article>
+            <article style={cardStyle}>
+              <p style={{ margin: "0 0 6px", color: "#64748b" }}>Платежи</p>
+              <strong style={{ fontSize: 28 }}>{paymentsCount}</strong>
+            </article>
+            <article style={cardStyle}>
+              <p style={{ margin: "0 0 6px", color: "#64748b" }}>Активные подписки</p>
+              <strong style={{ fontSize: 28 }}>{activeSubscriptions}</strong>
+            </article>
           </div>
 
-          <label style={{ ...labelStyle, flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <input name="oneTime" type="checkbox" defaultChecked />
-            Одноразовый (maxActivations = 1)
-          </label>
-          <label style={{ ...labelStyle, flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <input name="isActive" type="checkbox" defaultChecked />
-            Сразу активировать
-          </label>
-
-          <button type="submit" style={smallButtonStyle}>
-            Сгенерировать промокоды
-          </button>
-        </form>
-      </article>
-
-      <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-        {promoCodes.map((promo) => (
-          <article key={promo.id} style={cardStyle}>
-            <p style={{ margin: 0, fontWeight: 700 }}>{promo.code}</p>
-            <p style={{ margin: "4px 0 0", fontSize: 13, color: "#475569" }}>
-              Скидка: {formatPromoDiscount(promo.discountPercent, promo.discountRub)} | Активаций: {promo.activationsCount}/{promo.maxActivations} | До:{" "}
-              {new Date(promo.validUntil).toLocaleString("ru-RU")} | Статус: {promo.isActive ? "ACTIVE" : "DISABLED"}
-            </p>
-            <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>Создал: {promo.createdBy.email}</p>
-          </article>
-        ))}
-      </div>
-
-      <h2 style={{ marginTop: 30 }}>Пользователи и роли</h2>
-      <div style={{ display: "grid", gap: 8 }}>
-        {users.map((user) => (
-          <article key={user.id} style={cardStyle}>
-            <p style={{ margin: "0 0 6px", fontWeight: 600 }}>{user.email}</p>
-            <p style={{ margin: "0 0 8px", color: "#475569" }}>
-              Текущая роль: <strong>{user.role}</strong>
-            </p>
-            <p style={{ margin: "0 0 10px", color: "#64748b", fontSize: 13 }}>Создан: {new Date(user.createdAt).toLocaleString("ru-RU")}</p>
-
-            {role === "OWNER" ? (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <form action={updateUserRoleAction}>
-                  <input type="hidden" name="userId" value={user.id} />
-                  <input type="hidden" name="nextRole" value="CUSTOMER" />
+          {activeTab === "users" ? (
+            <>
+              <h2 style={{ marginTop: 0 }}>Remnawave</h2>
+              <article style={cardStyle}>
+                <p style={{ margin: "0 0 10px", color: "#475569" }}>
+                  Массовая синхронизация активных подписок с Remnawave (профиль, срок, лимит устройств, internal/external squad).
+                </p>
+                <form action={syncRemnawaveUsersAction}>
                   <button type="submit" style={smallButtonStyle}>
-                    Сделать CUSTOMER
+                    Синхронизировать пользователей
                   </button>
                 </form>
-                <form action={updateUserRoleAction}>
-                  <input type="hidden" name="userId" value={user.id} />
-                  <input type="hidden" name="nextRole" value="ADMIN" />
-                  <button type="submit" style={smallButtonStyle}>
-                    Сделать ADMIN
-                  </button>
-                </form>
-                <form action={updateUserRoleAction}>
-                  <input type="hidden" name="userId" value={user.id} />
-                  <input type="hidden" name="nextRole" value="OWNER" />
-                  <button type="submit" style={smallButtonStyle}>
-                    Сделать OWNER
-                  </button>
-                </form>
+              </article>
+
+              <h2 style={{ marginTop: 30 }}>Пользователи и роли</h2>
+              <div style={{ display: "grid", gap: 8 }}>
+                {users.map((user) => (
+                  <article key={user.id} style={cardStyle}>
+                    <p style={{ margin: "0 0 6px", fontWeight: 600 }}>{user.email}</p>
+                    <p style={{ margin: "0 0 8px", color: "#475569" }}>
+                      Текущая роль: <strong>{user.role}</strong>
+                    </p>
+                    <p style={{ margin: "0 0 10px", color: "#64748b", fontSize: 13 }}>Создан: {new Date(user.createdAt).toLocaleString("ru-RU")}</p>
+
+                    {role === "OWNER" ? (
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <form action={updateUserRoleAction}>
+                          <input type="hidden" name="userId" value={user.id} />
+                          <input type="hidden" name="nextRole" value="CUSTOMER" />
+                          <button type="submit" style={smallButtonStyle}>
+                            Сделать CUSTOMER
+                          </button>
+                        </form>
+                        <form action={updateUserRoleAction}>
+                          <input type="hidden" name="userId" value={user.id} />
+                          <input type="hidden" name="nextRole" value="ADMIN" />
+                          <button type="submit" style={smallButtonStyle}>
+                            Сделать ADMIN
+                          </button>
+                        </form>
+                        <form action={updateUserRoleAction}>
+                          <input type="hidden" name="userId" value={user.id} />
+                          <input type="hidden" name="nextRole" value="OWNER" />
+                          <button type="submit" style={smallButtonStyle}>
+                            Сделать OWNER
+                          </button>
+                        </form>
+                      </div>
+                    ) : (
+                      <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>Менять роли может только OWNER.</p>
+                    )}
+                  </article>
+                ))}
               </div>
-            ) : (
-              <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>Менять роли может только OWNER.</p>
-            )}
-          </article>
-        ))}
+            </>
+          ) : null}
+
+          {activeTab === "plans" ? (
+            <>
+              <h2 style={{ marginTop: 0 }}>Тарифы и подписки</h2>
+              {squadsLoadError ? (
+                <p style={{ color: "#b91c1c", marginTop: 0 }}>
+                  Не удалось получить сквады из Remnawave: {squadsLoadError}. Можно временно вписать UUID вручную.
+                </p>
+              ) : null}
+
+              <article style={cardStyle}>
+                <h3 style={{ marginTop: 0 }}>Добавить/обновить тариф (одна карточка, много сроков)</h3>
+                <PlanGroupForm
+                  action={upsertPlanGroupAction}
+                  submitLabel="Сохранить тариф"
+                  internalSquads={internalSquads}
+                  externalSquads={externalSquads}
+                />
+              </article>
+
+              <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                {planGroups.map((group) => (
+                  <article key={group.groupCode} style={cardStyle}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                      <div>
+                        <p style={{ margin: 0, fontWeight: 700 }}>{group.title}</p>
+                        <p style={{ margin: "4px 0 0", color: "#475569", fontSize: 13 }}>
+                          Код группы: {group.groupCode} | Tier: {formatPlanTier(group.tier)} | Тип: {formatPlanLimitType(group.limitType)}
+                        </p>
+                        <p style={{ margin: "4px 0 0", color: "#475569", fontSize: 13 }}>
+                          Варианты: {group.options.map((o) => `${formatDurationLabel(o.durationDays)} (${o.priceRub} ₽)`).join(", ")}
+                        </p>
+                      </div>
+                      <form action={togglePlanGroupActiveAction}>
+                        <input type="hidden" name="planIds" value={group.options.map((option) => option.id).join(",")} />
+                        <input type="hidden" name="nextIsActive" value={String(!group.isActive)} />
+                        <button type="submit" style={smallButtonStyle}>
+                          {group.isActive ? "Отключить группу" : "Включить группу"}
+                        </button>
+                      </form>
+                    </div>
+
+                    <div style={{ marginTop: 10 }}>
+                      <PlanGroupForm
+                        action={upsertPlanGroupAction}
+                        formId={`group-form-${group.groupCode}`}
+                        initial={{
+                          groupCode: group.groupCode,
+                          title: group.title,
+                          description: group.description,
+                          tier: group.tier,
+                          limitType: group.limitType,
+                          deviceLimit: group.deviceLimit,
+                          trafficLimitGb: group.trafficLimitGb,
+                          internalSquadUuid: group.internalSquadUuid,
+                          externalSquadUuid: group.externalSquadUuid,
+                          isActive: group.isActive,
+                          durationPrices: toDurationPricesText(group.options),
+                          planIds: group.options.map((option) => option.id).join(","),
+                        }}
+                        internalSquads={internalSquads}
+                        externalSquads={externalSquads}
+                      />
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                        <button type="submit" form={`group-form-${group.groupCode}`} style={smallButtonStyle}>
+                          Обновить тариф
+                        </button>
+                        <button
+                          type="submit"
+                          form={`group-form-${group.groupCode}`}
+                          formAction={deletePlanGroupAction}
+                          style={{ ...smallButtonStyle, borderColor: "#ef4444", color: "#b91c1c" }}
+                        >
+                          Удалить тариф навсегда
+                        </button>
+                      </div>
+                      <p style={{ margin: "8px 0 0", fontSize: 12, color: "#b91c1c" }}>
+                        Удаление безвозвратное только для шопа: варианты тарифа удаляются, подписки сохраняются (без привязки к плану).
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : null}
+
+          {activeTab === "promocodes" ? (
+            <>
+              <h2 style={{ marginTop: 0 }}>Генератор промокодов</h2>
+              <article style={cardStyle}>
+                <form action={generatePromoCodesAction} style={{ display: "grid", gap: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 8 }}>
+                    <label style={labelStyle}>
+                      Количество
+                      <input name="quantity" type="number" min={1} max={100} defaultValue={1} required style={inputStyle} />
+                    </label>
+                    <label style={labelStyle}>
+                      Префикс
+                      <input name="prefix" placeholder="VPN" defaultValue="VPN" style={inputStyle} />
+                    </label>
+                    <label style={labelStyle}>
+                      Длина кода
+                      <input name="codeLength" type="number" min={4} max={24} defaultValue={8} required style={inputStyle} />
+                    </label>
+                    <label style={labelStyle}>
+                      Тип скидки
+                      <select name="discountType" defaultValue="PERCENT" style={inputStyle}>
+                        <option value="PERCENT">Проценты</option>
+                        <option value="RUB">Рубли</option>
+                      </select>
+                    </label>
+                    <label style={labelStyle}>
+                      Значение скидки
+                      <input name="discountValue" type="number" min={1} step={1} defaultValue={10} required style={inputStyle} />
+                    </label>
+                    <label style={labelStyle}>
+                      Макс. активаций
+                      <input name="maxActivations" type="number" min={1} step={1} defaultValue={1} required style={inputStyle} />
+                    </label>
+                    <label style={labelStyle}>
+                      Срок действия до
+                      <input
+                        name="validUntil"
+                        type="datetime-local"
+                        defaultValue={new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 16)}
+                        required
+                        style={inputStyle}
+                      />
+                    </label>
+                  </div>
+
+                  <label style={{ ...labelStyle, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <input name="oneTime" type="checkbox" defaultChecked />
+                    Одноразовый (maxActivations = 1)
+                  </label>
+                  <label style={{ ...labelStyle, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <input name="isActive" type="checkbox" defaultChecked />
+                    Сразу активировать
+                  </label>
+
+                  <button type="submit" style={smallButtonStyle}>
+                    Сгенерировать промокоды
+                  </button>
+                </form>
+              </article>
+
+              <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                {promoCodes.map((promo) => (
+                  <article key={promo.id} style={cardStyle}>
+                    <p style={{ margin: 0, fontWeight: 700 }}>{promo.code}</p>
+                    <p style={{ margin: "4px 0 0", fontSize: 13, color: "#475569" }}>
+                      Скидка: {formatPromoDiscount(promo.discountPercent, promo.discountRub)} | Активаций: {promo.activationsCount}/{promo.maxActivations} |
+                      {" До: "}
+                      {new Date(promo.validUntil).toLocaleString("ru-RU")} | Статус: {promo.isActive ? "ACTIVE" : "DISABLED"}
+                    </p>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>Создал: {promo.createdBy.email}</p>
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : null}
+        </section>
       </div>
     </main>
   );
