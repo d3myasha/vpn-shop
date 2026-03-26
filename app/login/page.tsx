@@ -1,11 +1,28 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 
+function resolveNextPath(raw: string | null) {
+  if (!raw) {
+    return "/account";
+  }
+  if (!raw.startsWith("/")) {
+    return "/account";
+  }
+  if (raw.startsWith("//")) {
+    return "/account";
+  }
+
+  return raw;
+}
+
 export default function LoginPage() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const nextPath = resolveNextPath(searchParams.get("next"));
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,7 +63,7 @@ export default function LoginPage() {
       return;
     }
 
-    window.location.href = "/account";
+    window.location.href = nextPath;
   }
 
   return (

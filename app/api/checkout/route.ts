@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     const session = await auth();
     if (!session?.user?.id) {
       if (wantsRedirect) {
-        return NextResponse.redirect(new URL("/login", request.url), 303);
+        return NextResponse.redirect(new URL("/login?next=%2F", request.url), 303);
       }
       return NextResponse.json({ error: "Требуется авторизация" }, { status: 401 });
     }
