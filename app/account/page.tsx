@@ -10,6 +10,15 @@ const ACCOUNT_TABS = ["subscription", "payments", "referrals"] as const;
 type AccountTab = (typeof ACCOUNT_TABS)[number];
 
 type SearchParams = Record<string, string | string[] | undefined>;
+type PlanGroup = {
+  key: string;
+  title: string;
+  description: string | null;
+  limitType: "DEVICES" | "TRAFFIC";
+  deviceLimit: number;
+  trafficLimitGb: number | null;
+  options: Array<{ code: string; durationDays: number; priceRub: number }>;
+};
 
 function resolveAccountTab(rawTab: string | undefined): AccountTab {
   if (rawTab && ACCOUNT_TABS.includes(rawTab as AccountTab)) {
@@ -29,6 +38,63 @@ function readQueryValue(value: string | string[] | undefined) {
 
 function accountTabHref(tab: AccountTab) {
   return `/account?tab=${tab}`;
+}
+
+function formatRub(value: number) {
+  return new Intl.NumberFormat("ru-RU").format(value);
+}
+
+function formatDurationLabel(days: number) {
+  if (days === 30) return "1 месяц";
+  if (days === 90) return "3 месяца";
+  if (days === 180) return "6 месяцев";
+  if (days === 365) return "1 год";
+  return `${days} дн.`;
+}
+
+function getPlanGroupKey(code: string) {
+  const match = code.match(/^(.*)_((?:\d+[mdy])|(?:\d+d))$/i);
+  if (!match) {
+    return code;
+  }
+  return match[1];
+}
+
+function buildPlanGroups(
+  plans: Array<{
+    code: string;
+    title: string;
+    description: string | null;
+    durationDays: number;
+    deviceLimit: number;
+    limitType: "DEVICES" | "TRAFFIC";
+    trafficLimitGb: number | null;
+    priceRub: number;
+  }>
+) {
+  const grouped = new Map<string, PlanGroup>();
+  for (const plan of plans) {
+    const key = getPlanGroupKey(plan.code);
+    const current = grouped.get(key);
+    if (!current) {
+      grouped.set(key, {
+        key,
+        title: plan.title,
+        description: plan.description,
+        limitType: plan.limitType,
+        deviceLimit: plan.deviceLimit,
+        trafficLimitGb: plan.trafficLimitGb,
+        options: [{ code: plan.code, durationDays: plan.durationDays, priceRub: plan.priceRub }]
+      });
+      continue;
+    }
+    current.options.push({ code: plan.code, durationDays: plan.durationDays, priceRub: plan.priceRub });
+  }
+
+  return Array.from(grouped.values()).map((group) => ({
+    ...group,
+    options: group.options.sort((a, b) => a.durationDays - b.durationDays)
+  }));
 }
 
 function getDeviceActionMessage(action: string | undefined) {
@@ -98,6 +164,9 @@ export default async function AccountPage({
   const params = await Promise.resolve(searchParams ?? {});
   const activeTab = resolveAccountTab(readQueryValue(params.tab));
   const deviceActionMessage = getDeviceActionMessage(readQueryValue(params.deviceAction));
+  const planGroup = readQueryValue(params.planGroup);
+  const checkoutState = readQueryValue(params.checkout);
+  const checkoutError = readQueryValue(params.error);
 
   async function deleteDeviceAction(formData: FormData) {
     "use server";
@@ -145,7 +214,7 @@ export default async function AccountPage({
     }
   }
 
-  const [user, subscription, payments, invitedCount, rewardsCount, invitedUsers, inviterRewards] = await Promise.all([
+  const [user, subscription, payments, invitedCount, rewardsCount, invitedUsers, inviterRewards, plans] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
@@ -188,7 +257,24 @@ export default async function AccountPage({
         appliedAt: true,
       },
     }),
+    prisma.plan.findMany({
+      where: { isActive: true },
+      orderBy: [{ title: "asc" }, { durationDays: "asc" }],
+      select: {
+        code: true,
+        title: true,
+        description: true,
+        durationDays: true,
+        deviceLimit: true,
+        limitType: true,
+        trafficLimitGb: true,
+        priceRub: true,
+      },
+    }),
   ]);
+  const planGroups = buildPlanGroups(plans);
+  const hasHighlightedGroup = Boolean(planGroup) && planGroups.some((group) => group.key === planGroup);
+  const checkoutStateMessage = checkoutState === "disabled" ? "Покупка и оплата временно недоступна." : null;
   const rewardsByInvitedUserId = new Map(inviterRewards.map((reward) => [reward.invitedUserId, reward]));
 
   let remnawaveDevices: RemnawaveDevice[] = [];
@@ -269,8 +355,10 @@ export default async function AccountPage({
           {activeTab === "subscription" ? (
             <>
               <h2 style={{ marginTop: 0 }}>Подписка</h2>
+              {checkoutStateMessage ? <p style={{ marginTop: 0, color: "#b91c1c" }}>{checkoutStateMessage}</p> : null}
+              {checkoutError ? <p style={{ marginTop: 0, color: "#b91c1c" }}>Ошибка оплаты: {checkoutError}</p> : null}
               {deviceActionMessage ? <p style={{ marginTop: 0, color: deviceActionMessage.color }}>{deviceActionMessage.text}</p> : null}
-              {!subscription ? <p>Подписки пока нет.</p> : null}
+              {!subscription ? <p>Подписки пока нет. Выберите тариф и оплатите подписку.</p> : null}
               <div style={{ display: "grid", gap: 10 }}>
                 {subscription ? (
                   <article key={subscription.id} style={cardStyle}>
@@ -284,6 +372,85 @@ export default async function AccountPage({
                   </article>
                 ) : null}
               </div>
+
+              {!subscription ? (
+                <>
+                  <h3 style={{ marginTop: 20 }}>Тарифы</h3>
+                  {planGroups.length === 0 ? <p>Сейчас нет доступных тарифов.</p> : null}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    {planGroups.map((group) => {
+                      const isHighlighted = hasHighlightedGroup && group.key === planGroup;
+                      return (
+                        <article
+                          key={group.key}
+                          style={{
+                            ...cardStyle,
+                            border: isHighlighted ? "2px solid #0f766e" : cardStyle.border,
+                            boxShadow: isHighlighted ? "0 0 0 2px rgba(15,118,110,0.18)" : "none",
+                          }}
+                        >
+                          <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>{group.title}</p>
+                          <h4 style={{ margin: "6px 0 10px", fontSize: 18 }}>Выбор срока</h4>
+                          <p style={{ margin: "0 0 4px", fontSize: 14 }}>
+                            {group.limitType === "TRAFFIC" ? `Трафик: ${group.trafficLimitGb ?? "—"} ГБ` : `Устройств: ${group.deviceLimit}`}
+                          </p>
+                          {group.description ? <p style={{ margin: "0 0 8px", fontSize: 13, color: "#64748b" }}>{group.description}</p> : null}
+                          <form action="/api/checkout" method="post">
+                            <select
+                              name="planCode"
+                              defaultValue={group.options[0]?.code}
+                              style={{
+                                width: "100%",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: 8,
+                                padding: "8px 10px",
+                                marginBottom: 8,
+                              }}
+                            >
+                              {group.options.map((option) => (
+                                <option key={option.code} value={option.code}>
+                                  {formatDurationLabel(option.durationDays)} - {formatRub(option.priceRub)} ₽
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              name="promoCode"
+                              placeholder="Промокод (опционально)"
+                              style={{
+                                width: "100%",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: 8,
+                                padding: "8px 10px",
+                                marginBottom: 8,
+                              }}
+                            />
+                            <input
+                              name="referralCode"
+                              placeholder="Рефкод (опционально)"
+                              style={{
+                                width: "100%",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: 8,
+                                padding: "8px 10px",
+                                marginBottom: 8,
+                              }}
+                            />
+                            <button type="submit" style={buttonStyle}>
+                              Купить
+                            </button>
+                          </form>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : null}
 
               {subscription ? (
                 <>

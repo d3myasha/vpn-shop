@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 
   if (!checkoutEnabled) {
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL("/?checkout=disabled", origin), 303);
+      return NextResponse.redirect(new URL("/account?tab=subscription&checkout=disabled", origin), 303);
     }
     return NextResponse.json({ error: "Покупка и оплата временно недоступна" }, { status: 503 });
   }
@@ -66,7 +66,10 @@ export async function POST(request: NextRequest) {
     const session = await auth();
     if (!session?.user?.id) {
       if (wantsRedirect) {
-        return NextResponse.redirect(new URL("/login?next=%2F", origin), 303);
+        return NextResponse.redirect(
+          new URL(`/login?next=${encodeURIComponent("/account?tab=subscription")}`, origin),
+          303
+        );
       }
       return NextResponse.json({ error: "Требуется авторизация" }, { status: 401 });
     }
@@ -141,7 +144,10 @@ export async function POST(request: NextRequest) {
     logger.error("checkout_failed", error, { statusCode, planCode, route: "/api/checkout" });
 
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL(`/?error=${encodeURIComponent(message)}`, origin), 303);
+      return NextResponse.redirect(
+        new URL(`/account?tab=subscription&error=${encodeURIComponent(message)}`, origin),
+        303
+      );
     }
 
     return NextResponse.json({ error: message }, { status: statusCode });

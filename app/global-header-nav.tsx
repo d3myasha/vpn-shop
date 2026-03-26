@@ -22,7 +22,7 @@ export function GlobalHeaderNav({ isAuthenticated, isOwner }: GlobalHeaderNavPro
   return (
     <nav className="global-nav" aria-label="Основная навигация">
       <Link href="/" className={`global-nav-link ${isActive(pathname, "/") ? "is-active" : ""}`}>
-        Планы
+        Главная
       </Link>
 
       {isAuthenticated ? (
