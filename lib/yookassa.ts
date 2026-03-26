@@ -60,6 +60,7 @@ export async function createYooKassaPayment(params: {
   amountRub: number;
   description: string;
   idempotenceKey: string;
+  returnUrl?: string;
   metadata?: Record<string, string>;
 }) {
   const env = getEnv();
@@ -72,7 +73,7 @@ export async function createYooKassaPayment(params: {
     description: params.description,
     confirmation: {
       type: "redirect",
-      return_url: env.YOOKASSA_RETURN_URL
+      return_url: params.returnUrl ?? env.YOOKASSA_RETURN_URL
     },
     metadata: params.metadata
   };

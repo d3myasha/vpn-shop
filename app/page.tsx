@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 function formatRub(value: number) {
@@ -21,6 +23,11 @@ function getPlanGroupKey(code: string) {
 }
 
 export default async function HomePage() {
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
   const plans = await prisma.plan.findMany({
     where: { isActive: true },
     orderBy: [{ title: "asc" }, { durationDays: "asc" }],

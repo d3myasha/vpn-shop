@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
     const amountRub = plan.priceRub - discountRub;
 
     const idempotenceKey = crypto.randomUUID();
+    const returnUrl = new URL("/account", request.url).toString();
     const pending = await prisma.payment.create({
       data: {
         userId: user.id,
@@ -85,6 +86,7 @@ export async function POST(request: NextRequest) {
       amountRub,
       idempotenceKey,
       description: `VPN ${plan.title}`,
+      returnUrl,
       metadata: {
         payment_id: pending.id,
         user_id: user.id,
