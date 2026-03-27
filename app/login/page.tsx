@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 
@@ -27,6 +28,7 @@ export default function LoginPage() {
   const [draftEmail, setDraftEmail] = useState("");
   const [draftPassword, setDraftPassword] = useState("");
   const [draftReferralCode, setDraftReferralCode] = useState("");
+  const [draftLegalAccepted, setDraftLegalAccepted] = useState(false);
   const nextPath = resolveNextPath(searchParams.get("next"));
 
   async function signInWithCredentials(email: string, password: string) {
@@ -56,6 +58,7 @@ export default function LoginPage() {
     const password = String(form.get("password") ?? "");
     const referralCode = String(form.get("referralCode") ?? "").trim().toUpperCase();
     const verificationCode = String(form.get("verificationCode") ?? "").trim();
+    const legalAccepted = form.get("legalAccepted") === "on";
 
     if (needsVerification) {
       const registerResponse = await fetch("/api/register", {
@@ -66,6 +69,7 @@ export default function LoginPage() {
           password: draftPassword,
           referralCode: draftReferralCode,
           verificationCode,
+          legalAccepted: draftLegalAccepted,
         }),
       });
 
@@ -86,7 +90,7 @@ export default function LoginPage() {
     const requestCodeResponse = await fetch("/api/register/request-code", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, legalAccepted }),
     });
 
     if (!requestCodeResponse.ok) {
@@ -112,6 +116,7 @@ export default function LoginPage() {
     setDraftEmail(email);
     setDraftPassword(password);
     setDraftReferralCode(referralCode);
+    setDraftLegalAccepted(legalAccepted);
     setNeedsVerification(true);
     setInfo("Мы отправили код подтверждения на вашу почту. Введите его ниже.");
     setLoading(false);
@@ -122,6 +127,7 @@ export default function LoginPage() {
     setDraftEmail("");
     setDraftPassword("");
     setDraftReferralCode("");
+    setDraftLegalAccepted(false);
     setInfo(null);
     setError(null);
   }
@@ -145,6 +151,20 @@ export default function LoginPage() {
             <input required type="email" name="email" placeholder="Email" style={inputStyle} />
             <input required type="password" name="password" placeholder="Пароль" style={inputStyle} />
             <input name="referralCode" placeholder="Реферальный код (опционально)" style={inputStyle} />
+            <label style={checkboxLabelStyle}>
+              <input name="legalAccepted" type="checkbox" style={{ marginTop: 2 }} />
+              <span>
+                Я принимаю{" "}
+                <Link href="/legal/terms" target="_blank" rel="noopener noreferrer" style={inlineLinkStyle}>
+                  пользовательское соглашение
+                </Link>{" "}
+                и{" "}
+                <Link href="/legal/privacy" target="_blank" rel="noopener noreferrer" style={inlineLinkStyle}>
+                  политику конфиденциальности
+                </Link>
+                .
+              </span>
+            </label>
           </>
         ) : (
           <>
@@ -198,4 +218,18 @@ const secondaryButtonStyle: React.CSSProperties = {
   color: "#334155",
   fontWeight: 600,
   cursor: "pointer",
+};
+
+const checkboxLabelStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "18px 1fr",
+  gap: 8,
+  alignItems: "start",
+  color: "#334155",
+  fontSize: 14,
+};
+
+const inlineLinkStyle: React.CSSProperties = {
+  color: "#0f766e",
+  textDecoration: "underline",
 };

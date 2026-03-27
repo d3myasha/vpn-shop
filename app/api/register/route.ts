@@ -12,6 +12,7 @@ const registerSchema = z.object({
   password: z.string().min(8),
   referralCode: z.string().trim().toUpperCase().max(32).optional(),
   verificationCode: z.string().trim().length(6).optional(),
+  legalAccepted: z.boolean().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -30,6 +31,10 @@ export async function POST(request: NextRequest) {
     const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
     if (existing) {
       return NextResponse.json({ error: "Пользователь с таким email уже существует" }, { status: 409 });
+    }
+
+    if (!parsed.data.legalAccepted) {
+      return NextResponse.json({ error: "Для регистрации нужно принять условия и политику" }, { status: 400 });
     }
 
     const verificationCode = parsed.data.verificationCode?.trim();
