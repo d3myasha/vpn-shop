@@ -16,6 +16,9 @@ const DEFAULT_ALLOWED_EMAIL_DOMAINS = [
   "yahoo.com",
   "proton.me",
   "protonmail.com",
+  "d3mvpn.local",
+  "vpn.local",
+  "localhost",
 ];
 
 function parseAllowedDomains(raw: string | undefined) {
