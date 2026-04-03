@@ -423,7 +423,7 @@ export default async function AccountPage({
                             {group.limitType === "TRAFFIC" ? `Трафик: ${group.trafficLimitGb ?? "—"} ГБ` : `Устройств: ${group.deviceLimit}`}
                           </p>
                           {group.description ? <p style={{ margin: "0 0 8px", fontSize: 13, color: "#64748b" }}>{group.description}</p> : null}
-                          <form action="/api/checkout" method="post">
+                          <form action="/api/plugin/checkout" method="post">
                             <select
                               name="planCode"
                               defaultValue={group.options[0]?.code}

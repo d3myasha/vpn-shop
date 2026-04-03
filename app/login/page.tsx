@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
@@ -30,6 +30,65 @@ export default function LoginPage() {
   const [draftReferralCode, setDraftReferralCode] = useState("");
   const [draftLegalAccepted, setDraftLegalAccepted] = useState(false);
   const nextPath = resolveNextPath(searchParams.get("next"));
+  const telegramBotUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+
+  useEffect(() => {
+    if (!telegramBotUsername) {
+      return;
+    }
+
+    const root = document.getElementById("telegram-login-widget");
+    if (!root) {
+      return;
+    }
+    root.innerHTML = "";
+
+    const script = document.createElement("script");
+    script.src = "https://telegram.org/js/telegram-widget.js?22";
+    script.async = true;
+    script.setAttribute("data-telegram-login", telegramBotUsername);
+    script.setAttribute("data-size", "large");
+    script.setAttribute("data-userpic", "false");
+    script.setAttribute("data-request-access", "write");
+    script.setAttribute("data-onauth", "onTelegramAuth(user)");
+
+    (window as unknown as { onTelegramAuth?: (user: Record<string, string>) => void }).onTelegramAuth = async (user) => {
+      setLoading(true);
+      setError(null);
+      setInfo(null);
+
+      const callbackResponse = await fetch("/api/plugin/auth/telegram/callback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(user),
+      });
+
+      if (!callbackResponse.ok) {
+        const data = (await callbackResponse.json().catch(() => ({}))) as { error?: string };
+        setError(data.error ?? "Не удалось выполнить вход через Telegram");
+        setLoading(false);
+        return;
+      }
+
+      const result = await signIn("telegram", {
+        ...user,
+        redirect: false,
+      });
+
+      if (!result || result.error) {
+        setError("Не удалось выполнить вход через Telegram");
+        setLoading(false);
+        return;
+      }
+
+      window.location.href = nextPath;
+    };
+
+    root.appendChild(script);
+    return () => {
+      root.innerHTML = "";
+    };
+  }, [nextPath, telegramBotUsername]);
 
   async function signInWithCredentials(email: string, password: string) {
     const result = await signIn("credentials", {
@@ -135,6 +194,12 @@ export default function LoginPage() {
   return (
     <main className="container" style={{ padding: "40px 0 64px", maxWidth: 520 }}>
       <h1 style={{ marginTop: 0 }}>Вход и регистрация</h1>
+      {telegramBotUsername ? (
+        <div style={{ marginBottom: 16 }}>
+          <p style={{ margin: "0 0 8px", color: "#475569" }}>Быстрый вход</p>
+          <div id="telegram-login-widget" />
+        </div>
+      ) : null}
       {!needsVerification ? (
         <p style={{ marginTop: 0, color: "#475569" }}>
           Введите email и пароль. Для нового email мы отправим код подтверждения, после чего создадим аккаунт и выполним вход.
