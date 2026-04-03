@@ -52,23 +52,8 @@ model User {
   inviterRewards      ReferralReward[] @relation("InviterRewards")
   invitedRewards      ReferralReward[] @relation("InvitedRewards")
   createdPromoCodes   PromoCode[]    @relation("PromoCodeCreator")
-  botIdentity         BotIdentity?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
-}
-
-model BotIdentity {
-  id         String   @id @default(cuid())
-  userId     String   @unique
-  provider   String   @default("remnashop")
-  botUserId  String
-  telegramId String?  @unique
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, botUserId])
 }
 
 model Plan {
