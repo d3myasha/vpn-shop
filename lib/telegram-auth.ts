@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { generateUniqueReferralCode } from "@/lib/users";
-import { getBotUserByTelegramId, RemnashopAdapterError } from "@/lib/remnashop-adapter";
+import { getBotUserByTelegramId, BotDbAdapterError } from "@/lib/bot-db-adapter";
 
 export type TelegramAuthPayload = {
   id: string;
@@ -66,14 +66,6 @@ export function verifyTelegramAuthPayload(payload: TelegramAuthPayload) {
   return { ok: true as const };
 }
 
-function normalizeEmail(value: string | null | undefined) {
-  if (!value) {
-    return null;
-  }
-  const normalized = value.trim().toLowerCase();
-  return normalized || null;
-}
-
 async function ensureUniqueTelegramPlaceholderEmail(telegramId: string) {
   const candidate = `tg-${telegramId}@telegram.local`;
   const exists = await prisma.user.findUnique({ where: { email: candidate }, select: { id: true } });
@@ -92,7 +84,7 @@ export async function upsertTelegramUser(payload: TelegramAuthPayload) {
   const telegramId = String(payload.id);
   const botUser = await getBotUserByTelegramId(telegramId);
   if (!botUser?.id) {
-    throw new RemnashopAdapterError("Пользователь не найден в backend бота", 404);
+    throw new BotDbAdapterError("Пользователь не найден в backend бота", 404);
   }
 
   const existingIdentity = await prisma.botIdentity.findFirst({
@@ -118,21 +110,15 @@ export async function upsertTelegramUser(payload: TelegramAuthPayload) {
     return existingIdentity.user;
   }
 
-  const botEmail = normalizeEmail(botUser.email);
-  const userByEmail = botEmail ? await prisma.user.findUnique({ where: { email: botEmail } }) : null;
-
-  let user = userByEmail;
-  if (!user) {
-    const email = botEmail ?? (await ensureUniqueTelegramPlaceholderEmail(telegramId));
-    const referralCode = await generateUniqueReferralCode();
-    user = await prisma.user.create({
-      data: {
-        email,
-        passwordHash: await bcrypt.hash(crypto.randomUUID(), 12),
-        referralCode,
-      },
-    });
-  }
+  const email = await ensureUniqueTelegramPlaceholderEmail(telegramId);
+  const referralCode = await generateUniqueReferralCode();
+  const user = await prisma.user.create({
+    data: {
+      email,
+      passwordHash: await bcrypt.hash(crypto.randomUUID(), 12),
+      referralCode,
+    },
+  });
 
   await prisma.botIdentity.upsert({
     where: { userId: user.id },

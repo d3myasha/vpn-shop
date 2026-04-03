@@ -1,9 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { getBotUserByEmail, getBotUserByTelegramId } from "@/lib/remnashop-adapter";
+import { getBotUserByTelegramId } from "@/lib/bot-db-adapter";
 
 export async function resolveOrCreateBotIdentityForUser(params: {
   userId: string;
-  email: string;
   telegramId?: string | null;
 }) {
   const existing = await prisma.botIdentity.findUnique({
@@ -14,14 +13,11 @@ export async function resolveOrCreateBotIdentityForUser(params: {
     return existing;
   }
 
-  let botUser = null;
-  if (params.telegramId) {
-    botUser = await getBotUserByTelegramId(params.telegramId);
+  if (!params.telegramId) {
+    return null;
   }
 
-  if (!botUser) {
-    botUser = await getBotUserByEmail(params.email);
-  }
+  const botUser = await getBotUserByTelegramId(params.telegramId);
 
   if (!botUser?.id) {
     return null;

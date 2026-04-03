@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveOrCreateBotIdentityForUser } from "@/lib/bot-identity";
-import { createBotCheckout, isRemnashopConfigured, RemnashopAdapterError } from "@/lib/remnashop-adapter";
+import { buildBotPlanDeepLink, getBotPlans, isBotDbConfigured, BotDbAdapterError } from "@/lib/bot-db-adapter";
 import { logger } from "@/lib/logger";
 
 type CheckoutInput = {
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isRemnashopConfigured()) {
+  if (!isBotDbConfigured()) {
     const message = "Bot backend integration is not configured";
     if (wantsRedirect) {
       return NextResponse.redirect(
@@ -68,37 +68,55 @@ export async function POST(request: NextRequest) {
   try {
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { id: true, email: true },
+      select: {
+        id: true,
+        botIdentity: {
+          select: {
+            telegramId: true,
+          },
+        },
+      },
     });
     if (!user) {
-      throw new RemnashopAdapterError("User not found", 404);
+      throw new BotDbAdapterError("User not found", 404);
+    }
+
+    const telegramId = user.botIdentity?.telegramId;
+    if (!telegramId) {
+      throw new BotDbAdapterError("Сначала привяжите Telegram-аккаунт к профилю", 409);
     }
 
     const identity = await resolveOrCreateBotIdentityForUser({
       userId: user.id,
-      email: user.email,
+      telegramId,
     });
 
-    if (!identity?.botUserId) {
-      throw new RemnashopAdapterError("Bot identity is not linked for current user", 404);
+    const availablePlans = await getBotPlans();
+    const selectedPlan = availablePlans.find((plan) => plan.publicCode === planCode);
+    if (!selectedPlan) {
+      throw new BotDbAdapterError("Тариф не найден в backend бота", 404);
     }
 
-    const returnUrl = new URL("/account?tab=subscription", origin).toString();
-    const checkout = await createBotCheckout({
-      botUserId: identity.botUserId,
-      planCode,
-      promoCode: input.promoCode?.trim() || undefined,
-      referralCode: input.referralCode?.trim() || undefined,
-      returnUrl,
-    });
+    const checkoutLink = buildBotPlanDeepLink(selectedPlan.publicCode);
+    const url = new URL(checkoutLink);
+    if (input.promoCode?.trim()) {
+      url.searchParams.set("promo", input.promoCode.trim());
+    }
+    if (input.referralCode?.trim()) {
+      url.searchParams.set("ref", input.referralCode.trim().toUpperCase());
+    }
 
     if (wantsRedirect) {
-      return NextResponse.redirect(checkout.confirmationUrl, 303);
+      return NextResponse.redirect(url.toString(), 303);
     }
 
-    return NextResponse.json({ confirmationUrl: checkout.confirmationUrl });
+    return NextResponse.json({
+      redirectUrl: url.toString(),
+      mode: "telegram_deeplink",
+      botIdentity: identity ?? user.botIdentity,
+    });
   } catch (error) {
-    const statusCode = error instanceof RemnashopAdapterError ? error.statusCode : 502;
+    const statusCode = error instanceof BotDbAdapterError ? error.statusCode : 502;
     const message = error instanceof Error ? error.message : "Checkout failed";
     logger.error("plugin_checkout_failed", error, { statusCode, route: "/api/plugin/checkout" });
 

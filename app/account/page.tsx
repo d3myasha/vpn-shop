@@ -3,22 +3,21 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { deleteUserHwidDevice, getUserHwidDevices, resolveRemnawaveUserUuidByEmail, type RemnawaveDevice } from "@/lib/remnawave";
+import { deleteUserHwidDevice, getUserHwidDevices, type RemnawaveDevice } from "@/lib/remnawave";
+import {
+  getBotCurrentSubscriptionByTelegramId,
+  getBotPlans,
+  getBotTransactionsByTelegramId,
+  type BotDbPlan,
+  type BotDbSubscription,
+  type BotDbPayment,
+} from "@/lib/bot-db-adapter";
 
 const ACCOUNT_TABS = ["subscription", "payments", "referrals"] as const;
 
 type AccountTab = (typeof ACCOUNT_TABS)[number];
 
 type SearchParams = Record<string, string | string[] | undefined>;
-type PlanGroup = {
-  key: string;
-  title: string;
-  description: string | null;
-  limitType: "DEVICES" | "TRAFFIC";
-  deviceLimit: number;
-  trafficLimitGb: number | null;
-  options: Array<{ code: string; durationDays: number; priceRub: number }>;
-};
 
 function resolveAccountTab(rawTab: string | undefined): AccountTab {
   if (rawTab && ACCOUNT_TABS.includes(rawTab as AccountTab)) {
@@ -63,51 +62,6 @@ function formatDurationLabel(days: number) {
   return `${days} дн.`;
 }
 
-function getPlanGroupKey(code: string) {
-  const match = code.match(/^(.*)_((?:\d+[mdy])|(?:\d+d))$/i);
-  if (!match) {
-    return code;
-  }
-  return match[1];
-}
-
-function buildPlanGroups(
-  plans: Array<{
-    code: string;
-    title: string;
-    description: string | null;
-    durationDays: number;
-    deviceLimit: number;
-    limitType: "DEVICES" | "TRAFFIC";
-    trafficLimitGb: number | null;
-    priceRub: number;
-  }>
-) {
-  const grouped = new Map<string, PlanGroup>();
-  for (const plan of plans) {
-    const key = getPlanGroupKey(plan.code);
-    const current = grouped.get(key);
-    if (!current) {
-      grouped.set(key, {
-        key,
-        title: plan.title,
-        description: plan.description,
-        limitType: plan.limitType,
-        deviceLimit: plan.deviceLimit,
-        trafficLimitGb: plan.trafficLimitGb,
-        options: [{ code: plan.code, durationDays: plan.durationDays, priceRub: plan.priceRub }]
-      });
-      continue;
-    }
-    current.options.push({ code: plan.code, durationDays: plan.durationDays, priceRub: plan.priceRub });
-  }
-
-  return Array.from(grouped.values()).map((group) => ({
-    ...group,
-    options: group.options.sort((a, b) => a.durationDays - b.durationDays)
-  }));
-}
-
 function getDeviceActionMessage(action: string | undefined) {
   if (action === "deleted") {
     return { text: "Устройство удалено.", color: "#166534" };
@@ -140,26 +94,43 @@ function shortHwid(hwid: string) {
   return `${hwid.slice(0, 8)}...${hwid.slice(-8)}`;
 }
 
-async function resolveSubscriptionRemnawaveUserUuid(params: {
-  subscriptionId: string;
-  remnawaveProfileId: string | null;
-  email: string;
-}) {
-  if (params.remnawaveProfileId) {
-    return params.remnawaveProfileId;
-  }
-
-  const resolvedUuid = await resolveRemnawaveUserUuidByEmail(params.email);
-  if (!resolvedUuid) {
+function toLocalSubscriptionView(subscription: BotDbSubscription | null) {
+  if (!subscription) {
     return null;
   }
 
-  await prisma.subscription.update({
-    where: { id: params.subscriptionId },
-    data: { remnawaveProfileId: resolvedUuid },
-  });
+  return {
+    id: subscription.id,
+    status: subscription.status,
+    expiresAt: subscription.expiresAt,
+    deviceLimit: subscription.deviceLimit,
+    planName: subscription.planName ?? "IMPORTED / NONE",
+    subscriptionUrl: subscription.subscriptionUrl,
+    remnawaveUserUuid: subscription.remnawaveUserUuid,
+  };
+}
 
-  return resolvedUuid;
+function toLocalPaymentsView(payments: BotDbPayment[]) {
+  return payments.map((payment) => ({
+    id: payment.id,
+    amountRub: payment.amountRub,
+    status: payment.status,
+    provider: payment.gatewayType ?? "bot",
+    createdAt: payment.createdAt,
+  }));
+}
+
+function toLocalPlanGroups(plans: BotDbPlan[]) {
+  return plans.map((plan) => ({
+    key: plan.publicCode,
+    code: plan.publicCode,
+    title: plan.title,
+    description: plan.description,
+    limitType: plan.limitType,
+    deviceLimit: plan.deviceLimit,
+    trafficLimitGb: plan.trafficLimitGb,
+    options: plan.options,
+  }));
 }
 
 export default async function AccountPage({
@@ -193,28 +164,19 @@ export default async function AccountPage({
       redirect("/account?tab=subscription&deviceAction=delete_failed");
     }
 
-    const [actorUser, actorSubscription] = await Promise.all([
-      prisma.user.findUnique({
-        where: { id: actor.user.id },
-        select: { email: true },
-      }),
-      prisma.subscription.findUnique({
-        where: { userId: actor.user.id },
-        select: { id: true, remnawaveProfileId: true },
-      }),
-    ]);
+    const actorIdentity = await prisma.botIdentity.findUnique({
+      where: { userId: actor.user.id },
+      select: { telegramId: true },
+    });
 
-    if (!actorUser?.email || !actorSubscription) {
-      redirect("/account?tab=subscription&deviceAction=no_subscription");
+    if (!actorIdentity?.telegramId) {
+      redirect("/account?tab=subscription&deviceAction=profile_missing");
     }
 
-    const userUuid = await resolveSubscriptionRemnawaveUserUuid({
-      subscriptionId: actorSubscription.id,
-      remnawaveProfileId: actorSubscription.remnawaveProfileId,
-      email: actorUser.email,
-    });
+    const activeSubscription = await getBotCurrentSubscriptionByTelegramId(actorIdentity.telegramId);
+    const userUuid = activeSubscription?.remnawaveUserUuid ?? null;
     if (!userUuid) {
-      redirect("/account?tab=subscription&deviceAction=profile_missing");
+      redirect("/account?tab=subscription&deviceAction=no_subscription");
     }
 
     try {
@@ -226,23 +188,20 @@ export default async function AccountPage({
     }
   }
 
-  const [user, subscription, payments, invitedCount, rewardsCount, invitedUsers, inviterRewards, plans] = await Promise.all([
+  const [user, invitedCount, rewardsCount, invitedUsers, inviterRewards] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
         email: true,
         role: true,
         referralCode: true,
+        botIdentity: {
+          select: {
+            telegramId: true,
+            botUserId: true,
+          },
+        },
       },
-    }),
-    prisma.subscription.findUnique({
-      where: { userId: session.user.id },
-      include: { plan: true },
-    }),
-    prisma.payment.findMany({
-      where: { userId: session.user.id },
-      orderBy: { createdAt: "desc" },
-      take: 20,
     }),
     prisma.user.count({
       where: { referredByUserId: session.user.id },
@@ -269,22 +228,29 @@ export default async function AccountPage({
         appliedAt: true,
       },
     }),
-    prisma.plan.findMany({
-      where: { isActive: true },
-      orderBy: [{ title: "asc" }, { durationDays: "asc" }],
-      select: {
-        code: true,
-        title: true,
-        description: true,
-        durationDays: true,
-        deviceLimit: true,
-        limitType: true,
-        trafficLimitGb: true,
-        priceRub: true,
-      },
-    }),
   ]);
-  const planGroups = buildPlanGroups(plans);
+
+  const linkedTelegramId = user?.botIdentity?.telegramId ?? null;
+  let botDataError: string | null = null;
+  let botSubscription: BotDbSubscription | null = null;
+  let botPayments: BotDbPayment[] = [];
+  let botPlans: BotDbPlan[] = [];
+
+  if (linkedTelegramId) {
+    try {
+      [botSubscription, botPayments, botPlans] = await Promise.all([
+        getBotCurrentSubscriptionByTelegramId(linkedTelegramId),
+        getBotTransactionsByTelegramId(linkedTelegramId, 20),
+        getBotPlans(),
+      ]);
+    } catch {
+      botDataError = "Не удалось загрузить данные из backend бота.";
+    }
+  }
+
+  const subscription = toLocalSubscriptionView(botSubscription);
+  const payments = toLocalPaymentsView(botPayments);
+  const planGroups = toLocalPlanGroups(botPlans);
   const hasHighlightedGroup = Boolean(planGroup) && planGroups.some((group) => group.key === planGroup);
   const checkoutStateMessage = checkoutState === "disabled" ? "Покупка и оплата временно недоступна." : null;
   const rewardsByInvitedUserId = new Map(inviterRewards.map((reward) => [reward.invitedUserId, reward]));
@@ -293,23 +259,16 @@ export default async function AccountPage({
   let remnawaveUserUuid: string | null = null;
   let devicesLoadError: string | null = null;
 
-  if (subscription && user?.email) {
+  if (subscription?.remnawaveUserUuid) {
     try {
-      remnawaveUserUuid = await resolveSubscriptionRemnawaveUserUuid({
-        subscriptionId: subscription.id,
-        remnawaveProfileId: subscription.remnawaveProfileId,
-        email: user.email,
-      });
-
-      if (remnawaveUserUuid) {
-        remnawaveDevices = await getUserHwidDevices(remnawaveUserUuid);
-      }
+      remnawaveUserUuid = subscription.remnawaveUserUuid;
+      remnawaveDevices = await getUserHwidDevices(remnawaveUserUuid);
     } catch {
       devicesLoadError = "Не удалось загрузить устройства из Remnawave.";
     }
   }
 
-  const freeDeviceSlots = subscription ? Math.max(0, subscription.deviceLimitSnapshot - remnawaveDevices.length) : 0;
+  const freeDeviceSlots = subscription ? Math.max(0, subscription.deviceLimit - remnawaveDevices.length) : 0;
 
   return (
     <main className="container" style={{ padding: "36px 0 64px" }}>
@@ -370,16 +329,30 @@ export default async function AccountPage({
               {checkoutStateMessage ? <p style={{ marginTop: 0, color: "#b91c1c" }}>{checkoutStateMessage}</p> : null}
               {checkoutError ? <p style={{ marginTop: 0, color: "#b91c1c" }}>Ошибка оплаты: {checkoutError}</p> : null}
               {deviceActionMessage ? <p style={{ marginTop: 0, color: deviceActionMessage.color }}>{deviceActionMessage.text}</p> : null}
-              {!subscription ? <p>Подписки пока нет. Выберите тариф и оплатите подписку.</p> : null}
+              {botDataError ? <p style={{ marginTop: 0, color: "#b91c1c" }}>{botDataError}</p> : null}
+              {!linkedTelegramId ? (
+                <article style={cardStyle}>
+                  <p style={{ marginTop: 0, marginBottom: 8, fontWeight: 600 }}>Привяжите Telegram</p>
+                  <p style={{ marginTop: 0, marginBottom: 12 }}>
+                    Для доступа к подписке и покупке тарифов войдите через Telegram-аккаунт, который использует бот.
+                  </p>
+                  <Link href="/login" style={buttonStyle}>
+                    Войти через Telegram
+                  </Link>
+                </article>
+              ) : null}
+              {!subscription && linkedTelegramId ? <p>Подписки пока нет. Выберите тариф и продолжите покупку через бота.</p> : null}
               <div style={{ display: "grid", gap: 10 }}>
                 {subscription ? (
                   <article key={subscription.id} style={cardStyle}>
-                    <p style={{ margin: 0, fontWeight: 600 }}>{subscription.plan?.title ?? "IMPORTED / NONE"}</p>
+                    <p style={{ margin: 0, fontWeight: 600 }}>{subscription.planName}</p>
                     <p style={{ margin: "4px 0" }}>Статус: {subscription.status}</p>
-                    <p style={{ margin: "4px 0" }}>До: {new Date(subscription.expiresAt).toLocaleString("ru-RU")}</p>
-                    <p style={{ margin: "4px 0" }}>Лимит устройств: {subscription.deviceLimitSnapshot}</p>
+                    <p style={{ margin: "4px 0" }}>
+                      До: {subscription.expiresAt ? new Date(subscription.expiresAt).toLocaleString("ru-RU") : "—"}
+                    </p>
+                    <p style={{ margin: "4px 0" }}>Лимит устройств: {subscription.deviceLimit}</p>
                     <p style={{ margin: "4px 0", wordBreak: "break-all" }}>
-                      Ссылка подписки: {subscription.remnawaveSubscription ?? "еще не выдана"}
+                      Ссылка подписки: {subscription.subscriptionUrl ?? "еще не выдана"}
                     </p>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
                       <Link href={accountSubscriptionHref({ manage: true, planGroup })} style={buttonStyle}>
@@ -395,7 +368,7 @@ export default async function AccountPage({
                 ) : null}
               </div>
 
-              {!subscription || subscriptionManageMode ? (
+              {linkedTelegramId && (!subscription || subscriptionManageMode) ? (
                 <>
                   <h3 style={{ marginTop: 20 }}>{subscription ? "Смена/продление подписки" : "Тарифы"}</h3>
                   {planGroups.length === 0 ? <p>Сейчас нет доступных тарифов.</p> : null}
@@ -424,23 +397,16 @@ export default async function AccountPage({
                           </p>
                           {group.description ? <p style={{ margin: "0 0 8px", fontSize: 13, color: "#64748b" }}>{group.description}</p> : null}
                           <form action="/api/plugin/checkout" method="post">
-                            <select
-                              name="planCode"
-                              defaultValue={group.options[0]?.code}
-                              style={{
-                                width: "100%",
-                                border: "1px solid #cbd5e1",
-                                borderRadius: 8,
-                                padding: "8px 10px",
-                                marginBottom: 8,
-                              }}
-                            >
-                              {group.options.map((option) => (
-                                <option key={option.code} value={option.code}>
-                                  {formatDurationLabel(option.durationDays)} - {formatRub(option.priceRub)} ₽
-                                </option>
-                              ))}
-                            </select>
+                            <input type="hidden" name="planCode" value={group.code} />
+                            {group.options.length > 0 ? (
+                              <p style={{ margin: "0 0 8px", fontSize: 13, color: "#334155" }}>
+                                {group.options
+                                  .map((option) => `${formatDurationLabel(option.days)} - ${formatRub(option.priceRub)} ₽`)
+                                  .join(" • ")}
+                              </p>
+                            ) : (
+                              <p style={{ margin: "0 0 8px", fontSize: 13, color: "#334155" }}>Стоимость уточняйте в боте</p>
+                            )}
                             <input
                               name="promoCode"
                               placeholder="Промокод (опционально)"
@@ -464,7 +430,7 @@ export default async function AccountPage({
                               }}
                             />
                             <button type="submit" style={buttonStyle}>
-                              Купить
+                              Купить через Telegram
                             </button>
                           </form>
                         </article>
@@ -483,7 +449,7 @@ export default async function AccountPage({
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 10 }}>
                     <article style={cardStyle}>
                       <p style={{ margin: "0 0 6px", color: "#64748b" }}>Лимит устройств</p>
-                      <strong style={{ fontSize: 24 }}>{subscription.deviceLimitSnapshot}</strong>
+                      <strong style={{ fontSize: 24 }}>{subscription.deviceLimit}</strong>
                     </article>
                     <article style={cardStyle}>
                       <p style={{ margin: "0 0 6px", color: "#64748b" }}>Добавлено устройств</p>
@@ -519,13 +485,13 @@ export default async function AccountPage({
           {activeTab === "payments" ? (
             <>
               <h2 style={{ marginTop: 0 }}>История платежей</h2>
+              {!linkedTelegramId ? <p>Привяжите Telegram, чтобы видеть платежи из backend бота.</p> : null}
               {payments.length === 0 ? <p>Платежей пока нет.</p> : null}
               <div style={{ display: "grid", gap: 10 }}>
                 {payments.map((payment) => (
                   <article key={payment.id} style={cardStyle}>
                     <p style={{ margin: 0, fontWeight: 600 }}>{payment.amountRub} ₽</p>
                     <p style={{ margin: "4px 0" }}>Статус: {payment.status}</p>
-                    <p style={{ margin: "4px 0" }}>Скидка: {payment.discountRub} ₽</p>
                     <p style={{ margin: "4px 0" }}>Провайдер: {payment.provider}</p>
                     <p style={{ margin: "4px 0" }}>Дата: {new Date(payment.createdAt).toLocaleString("ru-RU")}</p>
                   </article>
