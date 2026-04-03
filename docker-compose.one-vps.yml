@@ -1,0 +1,100 @@
+services:
+  postgres_shop:
+    image: postgres:18
+    restart: always
+    environment:
+      POSTGRES_DB: ${SHOP_DB_NAME:-vpn_shop}
+      POSTGRES_USER: ${SHOP_DB_USER:-vpn_user}
+      POSTGRES_PASSWORD: ${SHOP_DB_PASSWORD:-vpn_pass}
+    volumes:
+      - postgres_shop_data:/var/lib/postgresql/data
+    networks:
+      - private_net
+
+  postgres_bot:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_DB: ${BOT_DB_NAME:-remnashop}
+      POSTGRES_USER: ${BOT_DB_USER:-remna_user}
+      POSTGRES_PASSWORD: ${BOT_DB_PASSWORD:-remna_pass}
+      BOT_DB_READONLY_USER: ${BOT_DB_READONLY_USER:-shop_ro}
+      BOT_DB_READONLY_PASSWORD: ${BOT_DB_READONLY_PASSWORD:-shop_ro_pass}
+    volumes:
+      - postgres_bot_data:/var/lib/postgresql/data
+      - ./ops/postgres_bot/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - private_net
+
+  redis:
+    image: redis:8-alpine
+    restart: always
+    networks:
+      - private_net
+
+  bot:
+    image: ${REMNASHOP_BOT_IMAGE:-ghcr.io/snoups/remnashop:latest}
+    restart: always
+    env_file:
+      - .env
+    environment:
+      APP_DOMAIN: ${BOT_DOMAIN}
+      DATABASE_HOST: postgres_bot
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${BOT_DB_NAME:-remnashop}
+      DATABASE_USER: ${BOT_DB_USER:-remna_user}
+      DATABASE_PASSWORD: ${BOT_DB_PASSWORD:-remna_pass}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - postgres_bot
+      - redis
+    networks:
+      - private_net
+      - public_net
+
+  shop:
+    build: .
+    restart: always
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${SHOP_DB_USER:-vpn_user}:${SHOP_DB_PASSWORD:-vpn_pass}@postgres_shop:5432/${SHOP_DB_NAME:-vpn_shop}?schema=public
+      REDIS_URL: redis://redis:6379
+      REMNASHOP_DATABASE_URL: postgresql://${BOT_DB_READONLY_USER:-shop_ro}:${BOT_DB_READONLY_PASSWORD:-shop_ro_pass}@postgres_bot:5432/${BOT_DB_NAME:-remnashop}
+    expose:
+      - "3000"
+    depends_on:
+      - postgres_shop
+      - postgres_bot
+      - redis
+    networks:
+      - private_net
+      - public_net
+
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile.one-vps:/etc/caddy/Caddyfile:ro
+      - ./caddy/data:/data
+      - ./caddy/config:/config
+    depends_on:
+      - shop
+    networks:
+      - public_net
+
+volumes:
+  postgres_shop_data:
+  postgres_bot_data:
+
+networks:
+  private_net:
+    driver: bridge
+  public_net:
+    driver: bridge
