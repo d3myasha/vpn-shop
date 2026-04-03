@@ -5,7 +5,7 @@ type RemnawaveUser = {
   username: string;
   email: string;
   expireAt: string;
-  hwidDeviceLimit: number;
+  hwidDeviceLimit: number | null;
   subscriptionUrl?: string;
 };
 
@@ -17,16 +17,19 @@ export type RemnawaveSquadOption = {
 export type RemnawaveDevice = {
   hwid: string;
   userUuid: string;
-  platform: string;
-  osVersion: string;
-  deviceModel: string;
-  userAgent: string;
+  platform: string | null;
+  osVersion: string | null;
+  deviceModel: string | null;
+  userAgent: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
 type RemnawaveSubscriptionResponse = {
   response?: {
+    user?: {
+      subscriptionUrl?: string;
+    };
     subscriptionUrl?: string;
   };
 };
@@ -68,6 +71,16 @@ function buildAuthHeader() {
   return { [headerName]: value };
 }
 
+const RW_API_ROUTES = {
+  internalSquads: "/api/internal-squads",
+  externalSquads: "/api/external-squads",
+  usersByEmail: (email: string) => `/api/users/by-email/${encodeURIComponent(email)}`,
+  users: "/api/users",
+  userHwidDevices: (userUuid: string) => `/api/hwid/devices/${encodeURIComponent(userUuid)}`,
+  deleteUserHwidDevice: "/api/hwid/devices/delete",
+  subscriptionByUuid: (uuid: string) => `/api/subscriptions/by-uuid/${encodeURIComponent(uuid)}`,
+} as const;
+
 function mapSquadOptions(input: Array<{ uuid?: string; name?: string }> | undefined): RemnawaveSquadOption[] {
   return (input ?? [])
     .filter((item): item is { uuid: string; name: string } => Boolean(item?.uuid && item?.name))
@@ -90,8 +103,8 @@ function extractExternalSquads(payload: RemnawaveExternalSquadsResponse) {
 
 export async function listRemnawaveSquads() {
   const [internalData, externalData] = await Promise.all([
-    remnawaveRequest<RemnawaveInternalSquadsResponse>("/api/internal-squads", { method: "GET" }),
-    remnawaveRequest<RemnawaveExternalSquadsResponse>("/api/external-squads", { method: "GET" })
+    remnawaveRequest<RemnawaveInternalSquadsResponse>(RW_API_ROUTES.internalSquads, { method: "GET" }),
+    remnawaveRequest<RemnawaveExternalSquadsResponse>(RW_API_ROUTES.externalSquads, { method: "GET" })
   ]);
 
   return {
@@ -145,8 +158,7 @@ function buildUsername(email: string, internalSubscriptionId: string) {
 }
 
 async function getUserByEmail(email: string) {
-  const encoded = encodeURIComponent(email);
-  const result = await remnawaveRequest<RemnawaveUsersByEmailResponse>(`/api/users/by-email/${encoded}`, {
+  const result = await remnawaveRequest<RemnawaveUsersByEmailResponse>(RW_API_ROUTES.usersByEmail(email), {
     method: "GET"
   });
 
@@ -159,8 +171,7 @@ export async function resolveRemnawaveUserUuidByEmail(email: string) {
 }
 
 export async function getUserHwidDevices(userUuid: string) {
-  const encoded = encodeURIComponent(userUuid);
-  const result = await remnawaveRequest<RemnawaveUserHwidDevicesResponse>(`/api/hwid/devices/${encoded}`, {
+  const result = await remnawaveRequest<RemnawaveUserHwidDevicesResponse>(RW_API_ROUTES.userHwidDevices(userUuid), {
     method: "GET"
   });
 
@@ -168,7 +179,7 @@ export async function getUserHwidDevices(userUuid: string) {
 }
 
 export async function deleteUserHwidDevice(userUuid: string, hwid: string) {
-  await remnawaveRequest<RemnawaveUserHwidDevicesResponse>("/api/hwid/devices/delete", {
+  await remnawaveRequest<RemnawaveUserHwidDevicesResponse>(RW_API_ROUTES.deleteUserHwidDevice, {
     method: "POST",
     body: JSON.stringify({ userUuid, hwid })
   });
@@ -196,7 +207,7 @@ async function createUser(params: {
     ...(params.externalSquadUuid ? { externalSquadUuid: params.externalSquadUuid } : {})
   };
 
-  const result = await remnawaveRequest<RemnawaveUserResponse>("/api/users", {
+  const result = await remnawaveRequest<RemnawaveUserResponse>(RW_API_ROUTES.users, {
     method: "POST",
     body: JSON.stringify(body)
   });
@@ -226,7 +237,7 @@ async function updateUser(params: {
     ...(params.externalSquadUuid ? { externalSquadUuid: params.externalSquadUuid } : {})
   };
 
-  const result = await remnawaveRequest<RemnawaveUserResponse>("/api/users", {
+  const result = await remnawaveRequest<RemnawaveUserResponse>(RW_API_ROUTES.users, {
     method: "PATCH",
     body: JSON.stringify(body)
   });
@@ -239,11 +250,11 @@ async function updateUser(params: {
 }
 
 async function getSubscriptionByUuid(userUuid: string) {
-  const result = await remnawaveRequest<RemnawaveSubscriptionResponse>(`/api/subscriptions/by-uuid/${userUuid}`, {
+  const result = await remnawaveRequest<RemnawaveSubscriptionResponse>(RW_API_ROUTES.subscriptionByUuid(userUuid), {
     method: "GET"
   });
 
-  return result.response?.subscriptionUrl ?? null;
+  return result.response?.subscriptionUrl ?? result.response?.user?.subscriptionUrl ?? null;
 }
 
 export async function syncRemnawaveSubscription(params: {
