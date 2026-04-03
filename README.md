@@ -112,6 +112,18 @@ Telegram login:
    - `docker compose exec app npm run prisma:deploy`
    - `docker compose exec app npm run prisma:seed`
 
+### Режим Addon (бот и сайт в разных compose)
+
+- Бот запускается своим стеком (в репозитории `remnashop`).
+- Сайт запускается этим репозиторием как отдельный стек.
+- Сайт работает как внешняя оболочка бота через `REMNASHOP_DATABASE_URL` (read-only доступ к БД бота).
+
+Пример `REMNASHOP_DATABASE_URL`:
+- если БД бота доступна по IP/домену:  
+  `postgresql://shop_ro:***@<bot-db-host>:5432/remnashop`
+- если оба стека в одной docker-сети:  
+  `postgresql://shop_ro:***@<postgres-service-name-in-bot-stack>:5432/remnashop`
+
 ## Что нужно доделать следующим шагом
 
 - Запустить `npm run test:smoke` на VPS/локальной машине с доступом к порту 3000 и браузерными бинарями.
