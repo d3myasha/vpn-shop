@@ -40,6 +40,17 @@ function accountTabHref(tab: AccountTab) {
   return `/account?tab=${tab}`;
 }
 
+function accountSubscriptionHref(params: { manage?: boolean; planGroup?: string | null }) {
+  const query = new URLSearchParams({ tab: "subscription" });
+  if (params.manage) {
+    query.set("manage", "change");
+  }
+  if (params.planGroup) {
+    query.set("planGroup", params.planGroup);
+  }
+  return `/account?${query.toString()}`;
+}
+
 function formatRub(value: number) {
   return new Intl.NumberFormat("ru-RU").format(value);
 }
@@ -165,6 +176,7 @@ export default async function AccountPage({
   const activeTab = resolveAccountTab(readQueryValue(params.tab));
   const deviceActionMessage = getDeviceActionMessage(readQueryValue(params.deviceAction));
   const planGroup = readQueryValue(params.planGroup);
+  const subscriptionManageMode = readQueryValue(params.manage) === "change";
   const checkoutState = readQueryValue(params.checkout);
   const checkoutError = readQueryValue(params.error);
 
@@ -369,13 +381,23 @@ export default async function AccountPage({
                     <p style={{ margin: "4px 0", wordBreak: "break-all" }}>
                       Ссылка подписки: {subscription.remnawaveSubscription ?? "еще не выдана"}
                     </p>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                      <Link href={accountSubscriptionHref({ manage: true, planGroup })} style={buttonStyle}>
+                        Сменить/продлить подписку
+                      </Link>
+                      {subscriptionManageMode ? (
+                        <Link href={accountSubscriptionHref({ manage: false })} style={secondaryButtonStyle}>
+                          Отменить
+                        </Link>
+                      ) : null}
+                    </div>
                   </article>
                 ) : null}
               </div>
 
-              {!subscription ? (
+              {!subscription || subscriptionManageMode ? (
                 <>
-                  <h3 style={{ marginTop: 20 }}>Тарифы</h3>
+                  <h3 style={{ marginTop: 20 }}>{subscription ? "Смена/продление подписки" : "Тарифы"}</h3>
                   {planGroups.length === 0 ? <p>Сейчас нет доступных тарифов.</p> : null}
                   <div
                     style={{
@@ -583,4 +605,15 @@ const dangerButtonStyle: React.CSSProperties = {
   color: "#b91c1c",
   padding: "6px 10px",
   cursor: "pointer"
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  border: "1px solid #cbd5e1",
+  borderRadius: 10,
+  padding: "8px 12px",
+  background: "#fff",
+  color: "#0f172a",
+  fontWeight: 600,
+  cursor: "pointer",
+  textDecoration: "none"
 };
