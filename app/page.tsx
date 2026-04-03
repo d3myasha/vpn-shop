@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { auth } from "@/auth";
-import { getBotPlans } from "@/lib/bot-db-adapter";
+import { prisma } from "@/lib/prisma";
 
 function formatRub(value: number) {
   return new Intl.NumberFormat("ru-RU").format(value);
@@ -14,7 +14,24 @@ function formatDurationLabel(days: number) {
   return `${days} дн.`;
 }
 
+function getPlanGroupKey(code: string) {
+  const match = code.match(/^(.*)_((?:\d+[mdy])|(?:\d+d))$/i);
+  if (!match) {
+    return code;
+  }
+  return match[1];
+}
+
 type SearchParams = Record<string, string | string[] | undefined>;
+type PlanGroup = {
+  key: string;
+  title: string;
+  description: string | null;
+  limitType: "DEVICES" | "TRAFFIC";
+  deviceLimit: number;
+  trafficLimitGb: number | null;
+  options: Array<{ code: string; durationDays: number; priceRub: number }>;
+};
 
 function readQueryValue(value: string | string[] | undefined) {
   if (Array.isArray(value)) {
@@ -24,8 +41,45 @@ function readQueryValue(value: string | string[] | undefined) {
   return value;
 }
 
-function getBuyHref(planCode: string, isAuthenticated: boolean) {
-  const target = `/account?tab=subscription&planGroup=${encodeURIComponent(planCode)}`;
+function buildPlanGroups(
+  plans: Array<{
+    code: string;
+    title: string;
+    description: string | null;
+    durationDays: number;
+    deviceLimit: number;
+    limitType: "DEVICES" | "TRAFFIC";
+    trafficLimitGb: number | null;
+    priceRub: number;
+  }>
+) {
+  const grouped = new Map<string, PlanGroup>();
+  for (const plan of plans) {
+    const key = getPlanGroupKey(plan.code);
+    const current = grouped.get(key);
+    if (!current) {
+      grouped.set(key, {
+        key,
+        title: plan.title,
+        description: plan.description,
+        limitType: plan.limitType,
+        deviceLimit: plan.deviceLimit,
+        trafficLimitGb: plan.trafficLimitGb,
+        options: [{ code: plan.code, durationDays: plan.durationDays, priceRub: plan.priceRub }]
+      });
+      continue;
+    }
+    current.options.push({ code: plan.code, durationDays: plan.durationDays, priceRub: plan.priceRub });
+  }
+
+  return Array.from(grouped.values()).map((group) => ({
+    ...group,
+    options: group.options.sort((a, b) => a.durationDays - b.durationDays)
+  }));
+}
+
+function getBuyHref(planGroup: string, isAuthenticated: boolean) {
+  const target = `/account?tab=subscription&planGroup=${encodeURIComponent(planGroup)}`;
   if (isAuthenticated) {
     return target;
   }
@@ -42,15 +96,26 @@ export default async function HomePage({
   const params = await Promise.resolve(searchParams ?? {});
   const checkoutState = readQueryValue(params.checkout);
   const errorMessage = checkoutState === "disabled" ? "Покупка и оплата временно недоступна." : null;
+  return <HomePageView errorMessage={errorMessage} isAuthenticated={isAuthenticated} />;
+}
 
-  let plansError: string | null = null;
-  let plans = [] as Awaited<ReturnType<typeof getBotPlans>>;
-
-  try {
-    plans = await getBotPlans();
-  } catch {
-    plansError = "Тарифы временно недоступны: нет соединения с backend бота.";
-  }
+async function HomePageView({ errorMessage, isAuthenticated }: { errorMessage: string | null; isAuthenticated: boolean }) {
+  const plans = await prisma.plan.findMany({
+    where: { isActive: true },
+    orderBy: [{ title: "asc" }, { durationDays: "asc" }],
+    select: {
+      id: true,
+      code: true,
+      title: true,
+      description: true,
+      durationDays: true,
+      deviceLimit: true,
+      limitType: true,
+      trafficLimitGb: true,
+      priceRub: true
+    }
+  });
+  const planGroups = buildPlanGroups(plans);
 
   return (
     <main className="container" style={{ padding: "36px 0 60px" }}>
@@ -58,7 +123,6 @@ export default async function HomePage({
         <h1 style={{ margin: 0, fontSize: 36 }}>VPN Shop</h1>
         <p style={{ margin: "8px 0 0", color: "#334155" }}>Стабильный VPN с удобным управлением подпиской.</p>
         {errorMessage ? <p style={{ margin: "10px 0 0", color: "#b91c1c", fontWeight: 600 }}>{errorMessage}</p> : null}
-        {plansError ? <p style={{ margin: "10px 0 0", color: "#b91c1c", fontWeight: 600 }}>{plansError}</p> : null}
       </header>
 
       <section id="about" style={sectionStyle}>
@@ -73,7 +137,7 @@ export default async function HomePage({
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
           <article style={featureCardStyle}>
             <h3 style={featureTitleStyle}>Быстрая активация</h3>
-            <p style={featureTextStyle}>После покупки в Telegram подписка автоматически обновится в личном кабинете.</p>
+            <p style={featureTextStyle}>После оплаты подписка автоматически появляется в личном кабинете.</p>
           </article>
           <article style={featureCardStyle}>
             <h3 style={featureTitleStyle}>Гибкие тарифы</h3>
@@ -95,9 +159,9 @@ export default async function HomePage({
           gap: 12
         }}
       >
-        {plans.map((plan) => (
+        {planGroups.map((group) => (
           <article
-            key={plan.id}
+            key={group.key}
             style={{
               borderRadius: 14,
               border: "1px solid #e2e8f0",
@@ -106,20 +170,16 @@ export default async function HomePage({
               boxShadow: "0 8px 28px rgba(15,23,42,0.05)"
             }}
           >
-            <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>{plan.title}</p>
-            <h2 style={{ margin: "6px 0 10px", fontSize: 19 }}>Тариф</h2>
+            <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>{group.title}</p>
+            <h2 style={{ margin: "6px 0 10px", fontSize: 19 }}>Тарифы</h2>
             <p style={{ margin: "0 0 4px", fontSize: 14 }}>
-              {plan.limitType === "TRAFFIC" ? `Трафик: ${plan.trafficLimitGb ?? "—"} ГБ` : `Устройств: ${plan.deviceLimit}`}
+              {group.limitType === "TRAFFIC" ? `Трафик: ${group.trafficLimitGb ?? "—"} ГБ` : `Устройств: ${group.deviceLimit}`}
             </p>
-            {plan.description ? <p style={{ margin: "0 0 8px", fontSize: 13, color: "#64748b" }}>{plan.description}</p> : null}
-            {plan.options.length > 0 ? (
-              <p style={{ margin: "8px 0", fontSize: 13, color: "#334155" }}>
-                {plan.options.map((option) => `${formatDurationLabel(option.days)} — ${formatRub(option.priceRub)} ₽`).join(" • ")}
-              </p>
-            ) : (
-              <p style={{ margin: "8px 0", fontSize: 13, color: "#334155" }}>Стоимость уточняйте в боте</p>
-            )}
-            <Link href={getBuyHref(plan.publicCode, isAuthenticated)} style={buyButtonStyle}>
+            {group.description ? <p style={{ margin: "0 0 8px", fontSize: 13, color: "#64748b" }}>{group.description}</p> : null}
+            <p style={{ margin: "8px 0", fontSize: 13, color: "#334155" }}>
+              {group.options.map((option) => `${formatDurationLabel(option.durationDays)} — ${formatRub(option.priceRub)} ₽`).join(" • ")}
+            </p>
+            <Link href={getBuyHref(group.key, isAuthenticated)} style={buyButtonStyle}>
               Купить
             </Link>
           </article>
