@@ -14,6 +14,11 @@ export type TelegramAuthPayload = {
   hash: string;
 };
 
+type ResolvedBotUser = {
+  telegramId: string;
+  botUserId: string;
+};
+
 function getTelegramBotToken() {
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
   if (!token) {
@@ -66,16 +71,7 @@ export function verifyTelegramAuthPayload(payload: TelegramAuthPayload) {
   return { ok: true as const };
 }
 
-async function ensureUniqueTelegramPlaceholderEmail(telegramId: string) {
-  const candidate = `tg-${telegramId}@telegram.local`;
-  const exists = await prisma.user.findUnique({ where: { email: candidate }, select: { id: true } });
-  if (!exists) {
-    return candidate;
-  }
-  return `tg-${telegramId}-${crypto.randomUUID().slice(0, 8)}@telegram.local`;
-}
-
-export async function upsertTelegramUser(payload: TelegramAuthPayload) {
+async function resolveVerifiedBotUser(payload: TelegramAuthPayload): Promise<ResolvedBotUser> {
   const verification = verifyTelegramAuthPayload(payload);
   if (!verification.ok) {
     throw new Error(verification.reason);
@@ -87,10 +83,28 @@ export async function upsertTelegramUser(payload: TelegramAuthPayload) {
     throw new BotDbAdapterError("Пользователь не найден в backend бота", 404);
   }
 
+  return {
+    telegramId,
+    botUserId: botUser.id,
+  };
+}
+
+async function ensureUniqueTelegramPlaceholderEmail(telegramId: string) {
+  const candidate = `tg-${telegramId}@telegram.local`;
+  const exists = await prisma.user.findUnique({ where: { email: candidate }, select: { id: true } });
+  if (!exists) {
+    return candidate;
+  }
+  return `tg-${telegramId}-${crypto.randomUUID().slice(0, 8)}@telegram.local`;
+}
+
+export async function upsertTelegramUser(payload: TelegramAuthPayload) {
+  const { telegramId, botUserId } = await resolveVerifiedBotUser(payload);
+
   const existingIdentity = await prisma.botIdentity.findFirst({
     where: {
       provider: "remnashop",
-      OR: [{ telegramId }, { botUserId: botUser.id }],
+      OR: [{ telegramId }, { botUserId }],
     },
     include: { user: true },
   });
@@ -100,8 +114,8 @@ export async function upsertTelegramUser(payload: TelegramAuthPayload) {
     if (!existingIdentity.telegramId) {
       updateData.telegramId = telegramId;
     }
-    if (existingIdentity.botUserId !== botUser.id) {
-      updateData.botUserId = botUser.id;
+    if (existingIdentity.botUserId !== botUserId) {
+      updateData.botUserId = botUserId;
     }
     if (Object.keys(updateData).length > 0) {
       await prisma.botIdentity.update({ where: { id: existingIdentity.id }, data: updateData });
@@ -124,16 +138,57 @@ export async function upsertTelegramUser(payload: TelegramAuthPayload) {
     where: { userId: user.id },
     update: {
       provider: "remnashop",
-      botUserId: botUser.id,
+      botUserId,
       telegramId,
     },
     create: {
       userId: user.id,
       provider: "remnashop",
-      botUserId: botUser.id,
+      botUserId,
       telegramId,
     },
   });
 
   return user;
+}
+
+export async function linkTelegramToExistingUser(userId: string, payload: TelegramAuthPayload) {
+  const { telegramId, botUserId } = await resolveVerifiedBotUser(payload);
+
+  const targetUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, role: true },
+  });
+  if (!targetUser) {
+    throw new BotDbAdapterError("User not found", 404);
+  }
+
+  const conflictingIdentity = await prisma.botIdentity.findFirst({
+    where: {
+      provider: "remnashop",
+      OR: [{ telegramId }, { botUserId }],
+    },
+    select: { userId: true },
+  });
+
+  if (conflictingIdentity && conflictingIdentity.userId !== userId) {
+    throw new BotDbAdapterError("Этот Telegram уже привязан к другому аккаунту", 409);
+  }
+
+  await prisma.botIdentity.upsert({
+    where: { userId },
+    update: {
+      provider: "remnashop",
+      botUserId,
+      telegramId,
+    },
+    create: {
+      userId,
+      provider: "remnashop",
+      botUserId,
+      telegramId,
+    },
+  });
+
+  return targetUser;
 }

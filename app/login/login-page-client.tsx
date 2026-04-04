@@ -25,8 +25,15 @@ type LoginPageClientProps = {
   telegramBotUsername: string | null;
 };
 
+function withLinkedFlag(pathname: string) {
+  const target = new URL(pathname, window.location.origin);
+  target.searchParams.set("tgLinked", "1");
+  return `${target.pathname}${target.search}`;
+}
+
 export default function LoginPageClient({ telegramBotUsername }: LoginPageClientProps) {
   const searchParams = useSearchParams();
+  const isLinkIntent = searchParams.get("intent") === "link_telegram";
   const [loading, setLoading] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [telegramError, setTelegramError] = useState<string | null>(null);
@@ -106,6 +113,15 @@ export default function LoginPageClient({ telegramBotUsername }: LoginPageClient
         const data = (await callbackResponse.json().catch(() => ({}))) as { error?: string };
         setTelegramError(data.error ?? "Не удалось выполнить вход через Telegram");
         setLoading(false);
+        return;
+      }
+
+      const callbackData = (await callbackResponse.json().catch(() => ({}))) as {
+        mode?: "linked" | "signin";
+      };
+
+      if (callbackData.mode === "linked") {
+        window.location.href = withLinkedFlag(nextPath);
         return;
       }
 
@@ -239,6 +255,11 @@ export default function LoginPageClient({ telegramBotUsername }: LoginPageClient
       <div style={{ marginBottom: 16 }}>
         <p style={{ margin: "0 0 8px", color: "#475569" }}>Быстрый вход через Telegram</p>
         {telegramBotUsername ? <div id="telegram-login-widget" /> : null}
+        {isLinkIntent ? (
+          <p style={{ margin: "10px 0 0", color: "#475569", fontSize: 14 }}>
+            После успешного входа Telegram будет привязан к вашему текущему аккаунту сайта.
+          </p>
+        ) : null}
         <p style={{ margin: "10px 0 0", color: "#475569", fontSize: 14 }}>
           Если Telegram-вход недоступен, используйте вход по email ниже.
         </p>

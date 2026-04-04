@@ -150,6 +150,7 @@ export default async function AccountPage({
   const subscriptionManageMode = readQueryValue(params.manage) === "change";
   const checkoutState = readQueryValue(params.checkout);
   const checkoutError = readQueryValue(params.error);
+  const telegramLinked = readQueryValue(params.tgLinked) === "1";
 
   async function deleteDeviceAction(formData: FormData) {
     "use server";
@@ -328,20 +329,24 @@ export default async function AccountPage({
               <h2 style={{ marginTop: 0 }}>Подписка</h2>
               {checkoutStateMessage ? <p style={{ marginTop: 0, color: "#b91c1c" }}>{checkoutStateMessage}</p> : null}
               {checkoutError ? <p style={{ marginTop: 0, color: "#b91c1c" }}>Ошибка оплаты: {checkoutError}</p> : null}
+              {telegramLinked ? <p style={{ marginTop: 0, color: "#166534" }}>Telegram успешно привязан к вашему аккаунту.</p> : null}
               {deviceActionMessage ? <p style={{ marginTop: 0, color: deviceActionMessage.color }}>{deviceActionMessage.text}</p> : null}
               {botDataError ? <p style={{ marginTop: 0, color: "#b91c1c" }}>{botDataError}</p> : null}
               {!linkedTelegramId ? (
                 <article style={cardStyle}>
                   <p style={{ marginTop: 0, marginBottom: 8, fontWeight: 600 }}>Привяжите Telegram</p>
                   <p style={{ marginTop: 0, marginBottom: 12 }}>
-                    Для доступа к подписке и покупке тарифов войдите через Telegram-аккаунт, который использует бот.
+                    Для доступа к подписке и покупке тарифов привяжите Telegram-аккаунт, который использует бот.
                   </p>
-                  <Link href="/login" style={buttonStyle}>
-                    Войти через Telegram
+                  <Link
+                    href={`/login?intent=link_telegram&next=${encodeURIComponent("/account?tab=subscription&intent=link_telegram")}`}
+                    style={buttonStyle}
+                  >
+                    Привязать Telegram
                   </Link>
                 </article>
               ) : null}
-              {!subscription && linkedTelegramId ? <p>Подписки пока нет. Выберите тариф и продолжите покупку через бота.</p> : null}
+              {!subscription && linkedTelegramId ? <p>Подписки пока нет. Выберите тариф и оплатите на сайте.</p> : null}
               <div style={{ display: "grid", gap: 10 }}>
                 {subscription ? (
                   <article key={subscription.id} style={cardStyle}>
@@ -430,7 +435,7 @@ export default async function AccountPage({
                               }}
                             />
                             <button type="submit" style={buttonStyle}>
-                              Купить через Telegram
+                              Оплатить на сайте
                             </button>
                           </form>
                         </article>
