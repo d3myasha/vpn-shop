@@ -346,7 +346,7 @@ export default async function AccountPage({
                   </Link>
                 </article>
               ) : null}
-              {!subscription && linkedTelegramId ? <p>Подписки пока нет. Выберите тариф и оплатите на сайте.</p> : null}
+              {!subscription && linkedTelegramId ? <p>Подписки пока нет. Выберите тариф и продолжите покупку через бота.</p> : null}
               <div style={{ display: "grid", gap: 10 }}>
                 {subscription ? (
                   <article key={subscription.id} style={cardStyle}>
@@ -435,7 +435,7 @@ export default async function AccountPage({
                               }}
                             />
                             <button type="submit" style={buttonStyle}>
-                              Оплатить на сайте
+                              Купить через Telegram
                             </button>
                           </form>
                         </article>

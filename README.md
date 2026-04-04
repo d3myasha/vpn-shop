@@ -88,10 +88,6 @@ REMNASHOP_DB_CONNECT_TIMEOUT_MS=5000
 REMNASHOP_DB_SSL=false
 REMNASHOP_DB_SSL_REJECT_UNAUTHORIZED=true
 
-REMNASHOP_API_BASE_URL=https://bot.your-domain.ru
-REMNASHOP_API_TOKEN=replace-with-bot-api-token
-REMNASHOP_API_TIMEOUT_MS=8000
-
 RESEND_API_KEY=re_xxxxxxxxx
 RESEND_FROM=VPN Shop <no-reply@d3mshop.site>
 ALLOWED_EMAIL_DOMAINS=gmail.com,inbox.ru,mail.ru,yandex.ru,icloud.com,d3mvpn.local,vpn.local,localhost
@@ -138,7 +134,8 @@ docker compose logs --tail=120 app
 - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` указывать **без `@`**.
 - В BotFather должен быть настроен `/setdomain` на домен сайта.
 - `REMNASHOP_DATABASE_URL` используется только для read-only чтения данных бота.
-- Оплата на сайте выполняется в браузере, но checkout создаётся backend бота через `POST /api/storefront/checkout`.
+- Покупка из кабинета идёт через Telegram deep-link (`start=plan_<public_code>`).
+- Для стабильных сессий выставляй одинаковые `AUTH_SECRET` и `NEXTAUTH_SECRET` (или используй только `AUTH_SECRET`).
 
 ## Частые проблемы
 
@@ -148,9 +145,15 @@ docker compose logs --tail=120 app
 - `Тарифы временно недоступны`:
   - неверный `REMNASHOP_DATABASE_URL`,
   - нет прав read-only у пользователя БД.
+- `password authentication failed for user "shop_ro"`:
+  - в команде подставлен плейсхолдер вместо реального пароля,
+  - проверь доступ: `docker run --rm --network remna_shared_net -e PGPASSWORD='<REAL_PASS>' postgres:18 psql -h remnashop-db -U shop_ro -d remnashop -c 'select 1;'`
 - Ошибка checkout:
-  - не заполнены `REMNASHOP_API_BASE_URL` / `REMNASHOP_API_TOKEN`,
-  - в боте нет/не работает endpoint `/api/storefront/checkout`.
+  - не привязан Telegram в профиле сайта,
+  - план не найден в backend бота.
 - `502` от прокси:
   - приложение не слушает `3001`,
   - прокси смотрит не на тот upstream.
+- `JWTSessionError: no matching decryption secret`:
+  - поменялся секрет сессии,
+  - пересоздай app и очисти cookies домена (или открой инкогнито).
