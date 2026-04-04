@@ -8,7 +8,8 @@
 - бот уже запущен на сервере,
 - сайт поднимается отдельно,
 - используется только `docker-compose.yml` и `.env`,
-- образ берётся из `ghcr.io/d3myasha/vpn-shop:latest`.
+- образ берётся из `ghcr.io/d3myasha/vpn-shop:latest`,
+- отдельный bot API для checkout **не нужен** (используется Telegram deep-link flow).
 
 Публичный GHCR не требует `docker login`.
 
@@ -129,13 +130,20 @@ docker compose exec app npm run prisma:deploy
 docker compose logs --tail=120 app
 ```
 
+### 8) Быстрый smoke-check после обновления
+
+```bash
+curl -I http://127.0.0.1:3001/api/health
+curl -s https://d3mshop.site/login | grep -E "Быстрый вход через Telegram|Введите email и пароль"
+```
+
 ## Что важно знать
 
 - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` указывать **без `@`**.
 - В BotFather должен быть настроен `/setdomain` на домен сайта.
 - `REMNASHOP_DATABASE_URL` используется только для read-only чтения данных бота.
 - Покупка из кабинета идёт через Telegram deep-link (`start=plan_<public_code>`).
-- Для стабильных сессий выставляй одинаковые `AUTH_SECRET` и `NEXTAUTH_SECRET` (или используй только `AUTH_SECRET`).
+- Для стабильных сессий держи одинаковые `AUTH_SECRET` и `NEXTAUTH_SECRET` (или оставь только `AUTH_SECRET` и не меняй его).
 
 ## Частые проблемы
 
