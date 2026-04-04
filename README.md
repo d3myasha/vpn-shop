@@ -69,19 +69,29 @@ networks:
 ### 3) Создай `.env`
 
 ```env
+# БД сайта (локальный postgres из этого же docker-compose)
 DATABASE_URL=postgresql://vpn_user:vpn_pass@postgres:5432/vpn_shop?schema=public
+
+# Redis сайта (локальный redis из этого же docker-compose)
 REDIS_URL=redis://redis:6379
 
+# Секреты сессии (важно: держи одинаковыми, чтобы не было JWTSessionError)
 AUTH_SECRET=replace-with-random-secret
 NEXTAUTH_SECRET=replace-with-random-secret
+
+# Публичный домен сайта (тот, куда заходят пользователи)
 NEXTAUTH_URL=https://d3mshop.site
 
+# Включатель checkout сайта
 CHECKOUT_ENABLED=true
 
+# Telegram-бот для входа/привязки (username без @)
 TELEGRAM_BOT_TOKEN=replace
 NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=d3mvpn_bot
 TELEGRAM_AUTH_MAX_AGE_SECONDS=300
 
+# Read-only доступ к БД бота Remnashop
+# ВАЖНО: remnashop-db — это имя контейнера postgres бота в общей сети remna_shared_net
 REMNASHOP_DATABASE_URL=postgresql://shop_ro:SHOP_RO_PASSWORD@remnashop-db:5432/remnashop
 REMNASHOP_DB_POOL_MAX=5
 REMNASHOP_DB_IDLE_MS=10000
@@ -89,8 +99,11 @@ REMNASHOP_DB_CONNECT_TIMEOUT_MS=5000
 REMNASHOP_DB_SSL=false
 REMNASHOP_DB_SSL_REJECT_UNAUTHORIZED=true
 
+# Email-коды входа/регистрации (Resend)
 RESEND_API_KEY=re_xxxxxxxxx
 RESEND_FROM=VPN Shop <no-reply@d3mshop.site>
+
+# Разрешенные домены email для регистрации/входа
 ALLOWED_EMAIL_DOMAINS=gmail.com,inbox.ru,mail.ru,yandex.ru,icloud.com,d3mvpn.local,vpn.local,localhost
 ```
 
