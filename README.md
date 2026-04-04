@@ -97,6 +97,15 @@ Telegram login:
 - `TELEGRAM_BOT_TOKEN`
 - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME`
 - `TELEGRAM_AUTH_MAX_AGE_SECONDS`
+- `NEXTAUTH_URL` (должен совпадать с публичным доменом, например `https://d3mshop.site`)
+
+Правила для Telegram-входа:
+
+- `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` указывайте **без** `@` (например `d3mvpn_bot`).
+- В BotFather должен быть настроен домен через `/setdomain` на ваш сайт.
+- На `/login` Telegram-панель показывается первой, email-вход всегда доступен ниже как fallback.
+- Если Telegram-виджет не загрузился (ошибка/таймаут), UI покажет сообщение: `Telegram-вход временно недоступен. Используйте вход по email.`
+- После runtime-фикса для смены username/token достаточно обновить `.env` и перезапустить только `app` (`docker compose up -d --force-recreate app`), пересборка фронта не требуется.
 
 Примечание по `REMNAWAVE_API_URL`:
 - указывайте базовый host (например, `https://panel.example.com`), без обязательного суффикса `/api`.
