@@ -142,6 +142,69 @@ Telegram login:
 - если оба стека в одной docker-сети:  
   `postgresql://shop_ro:***@<postgres-service-name-in-bot-stack>:5432/remnashop`
 
+### Простой запуск через GHCR на VPS с ботом
+
+Ниже самый простой путь, если бот уже работает на сервере, а сайт поднимаем как отдельный стек из `ghcr.io`.
+
+1. Подготовьте папку и заберите репозиторий:
+   - `mkdir -p /opt/vpn-shop && cd /opt/vpn-shop`
+   - `git clone https://github.com/d3myasha/vpn-shop.git .`
+2. Создайте `.env`:
+   - `cp .env.example .env`
+   - заполните минимум:
+   - `DATABASE_URL`
+   - `AUTH_SECRET`
+   - `NEXTAUTH_SECRET`
+   - `NEXTAUTH_URL` (например `https://d3mshop.site`)
+   - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` (без `@`)
+   - `TELEGRAM_BOT_TOKEN`
+   - `REMNASHOP_DATABASE_URL` (read-only доступ к БД бота)
+   - `REMNASHOP_API_BASE_URL`
+   - `REMNASHOP_API_TOKEN`
+   - `RESEND_API_KEY`
+   - `RESEND_FROM`
+3. Создайте override для запуска `app` из GHCR и проброса порта для внешнего Caddy:
+
+```yaml
+# /opt/vpn-shop/docker-compose.override.yml
+services:
+  app:
+    image: ghcr.io/d3myasha/vpn-shop:latest
+    build: null
+    ports:
+      - "3001:3000"
+```
+
+4. Войдите в GHCR (если репозиторий приватный):
+   - `docker login ghcr.io -u d3myasha`
+5. Поднимите стек:
+   - `docker compose pull`
+   - `docker compose up -d`
+6. Примените миграции и seed:
+   - `docker compose exec app npm run prisma:deploy`
+   - `docker compose exec app npm run prisma:seed`
+7. Проверьте:
+   - `docker compose ps`
+   - `curl -I http://127.0.0.1:3001/api/health`
+   - `curl -I https://<your-shop-domain>`
+
+Обновление сайта до новой версии:
+- `cd /opt/vpn-shop`
+- `git fetch --all && git reset --hard origin/main`
+- `docker compose pull app`
+- `docker compose up -d --force-recreate app`
+- `docker compose logs --tail=120 app`
+
+Если используете отдельный Caddy в другом compose:
+- проксируйте `https://<your-shop-domain>` на `http://172.17.0.1:3001` или на IP хоста:3001,
+- после правки Caddy перезапустите только Caddy-контейнер.
+
+Частые проблемы:
+- `Username invalid` в Telegram: неверный `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` (нужен без `@`) или не настроен `/setdomain` в BotFather.
+- `Тарифы временно недоступны`: неверный `REMNASHOP_DATABASE_URL` или нет read-only прав.
+- Ошибка checkout: не настроены `REMNASHOP_API_BASE_URL`/`REMNASHOP_API_TOKEN` или bot endpoint `/api/storefront/checkout`.
+- 502 от Caddy: `app` не проброшен на `3001` или Caddy смотрит не на тот upstream.
+
 ### Чистая установка на VPS (бот уже запущен)
 
 Ниже минимальный рабочий сценарий для отдельного стека сайта поверх бота.
