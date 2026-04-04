@@ -150,6 +150,21 @@ curl -I http://127.0.0.1:3001/api/health
 curl -s https://d3mshop.site/login | grep -E "Быстрый вход через Telegram|Введите email и пароль"
 ```
 
+### 9) Фикс JWT-секрета (один раз, чтобы не ловить `no matching decryption secret`)
+
+```bash
+cd /opt/vpn-shop
+bash scripts/fix-jwt-secret.sh
+docker compose up -d --force-recreate app
+```
+
+### 10) Сбросить только БД сайта (бот не трогается)
+
+```bash
+cd /opt/vpn-shop
+bash scripts/reset-site-db.sh
+```
+
 ## Что важно знать
 
 - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` указывать **без `@`**.
