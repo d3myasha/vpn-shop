@@ -210,11 +210,21 @@ cd /opt/vpn-shop
 bash scripts/reset-site-db.sh
 ```
 
+### 11) One-time cleanup legacy `telegram.local` email
+
+Если раньше использовались synthetic email вида `tg-...@telegram.local`, переведи их в Telegram-only профиль:
+
+```bash
+cd /opt/vpn-shop
+bash scripts/cleanup-legacy-telegram-local-emails.sh
+```
+
 ## Что важно знать
 
 - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` указывать **без `@`**.
 - В BotFather должен быть настроен `/setdomain` на домен сайта.
 - `REMNASHOP_DATABASE_URL` используется только для read-only чтения данных бота.
+- Synthetic email больше не создается: Telegram-first пользователь может существовать без email, а email привязывается позже из `/account`.
 - Покупка из кабинета идёт через Telegram deep-link (`start=plan_<public_code>`), если `CHECKOUT_ENABLED=false`.
 - Если `CHECKOUT_ENABLED=true`, приложение использует internal checkout через YooKassa и Remnawave.
 - Для стабильных сессий достаточно держать постоянным `AUTH_SECRET`; `NEXTAUTH_SECRET` можно оставить тем же значением для обратной совместимости.

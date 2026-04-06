@@ -90,15 +90,6 @@ async function resolveVerifiedBotUser(payload: TelegramAuthPayload): Promise<Res
   };
 }
 
-async function ensureUniqueTelegramPlaceholderEmail(telegramId: string) {
-  const candidate = `tg-${telegramId}@telegram.local`;
-  const exists = await prisma.user.findUnique({ where: { email: candidate }, select: { id: true } });
-  if (!exists) {
-    return candidate;
-  }
-  return `tg-${telegramId}-${crypto.randomUUID().slice(0, 8)}@telegram.local`;
-}
-
 export async function upsertTelegramUser(payload: TelegramAuthPayload) {
   const { telegramId, botUserId } = await resolveVerifiedBotUser(payload);
 
@@ -137,14 +128,13 @@ export async function upsertTelegramUser(payload: TelegramAuthPayload) {
     return existingIdentity.user;
   }
 
-  const email = await ensureUniqueTelegramPlaceholderEmail(telegramId);
   const referralCode = await generateUniqueReferralCode();
   const user = await prisma.user.create({
     data: {
-      email,
+      email: null,
       passwordHash: await bcrypt.hash(crypto.randomUUID(), 12),
       referralCode,
-      role: resolveRoleForNewUser({ email, telegramId }),
+      role: resolveRoleForNewUser({ telegramId }),
     },
   });
 

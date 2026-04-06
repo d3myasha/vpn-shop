@@ -28,20 +28,13 @@ export async function sendRegistrationVerificationCode(email: string) {
   }
 
   const code = generateCode();
-  const codeHash = hashCode(code);
-  const now = new Date();
-  const expiresAt = addMinutes(now, CODE_TTL_MINUTES);
-
-  await prisma.emailVerificationCode.create({
-    data: {
-      email,
-      codeHash,
-      expiresAt,
-    },
-  });
-
-  await sendVerificationCodeEmail({ email, code });
+  await createAndSendVerificationCode(email, code);
   return { exists: false as const };
+}
+
+export async function sendEmailLinkVerificationCode(email: string) {
+  const code = generateCode();
+  await createAndSendVerificationCode(email, code);
 }
 
 export async function verifyRegistrationCode(params: { email: string; code: string }) {
@@ -78,4 +71,20 @@ export async function verifyRegistrationCode(params: { email: string; code: stri
   });
 
   return { ok: true as const };
+}
+
+async function createAndSendVerificationCode(email: string, code: string) {
+  const codeHash = hashCode(code);
+  const now = new Date();
+  const expiresAt = addMinutes(now, CODE_TTL_MINUTES);
+
+  await prisma.emailVerificationCode.create({
+    data: {
+      email,
+      codeHash,
+      expiresAt,
+    },
+  });
+
+  await sendVerificationCodeEmail({ email, code });
 }

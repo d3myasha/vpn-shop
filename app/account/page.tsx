@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { LinkEmailCard } from "@/app/account/link-email-card";
 import { deleteUserHwidDevice, getUserHwidDevices, type RemnawaveDevice } from "@/lib/remnawave";
 import {
   getBotCurrentSubscriptionByTelegramId,
@@ -274,7 +275,7 @@ export default async function AccountPage({
   return (
     <main className="container" style={{ padding: "36px 0 64px" }}>
       <h1 style={{ marginTop: 0 }}>Личный кабинет</h1>
-      <p style={{ marginBottom: 6 }}>Email: {user?.email}</p>
+      <p style={{ marginBottom: 6 }}>Email: {user?.email ?? "не привязан"}</p>
       {user?.role && user.role !== "CUSTOMER" ? <p style={{ marginBottom: 6 }}>Роль: {user.role}</p> : null}
       <p style={{ marginBottom: 18 }}>Ваш рефкод: {user?.referralCode}</p>
 
@@ -332,6 +333,16 @@ export default async function AccountPage({
               {telegramLinked ? <p style={{ marginTop: 0, color: "#166534" }}>Telegram успешно привязан к вашему аккаунту.</p> : null}
               {deviceActionMessage ? <p style={{ marginTop: 0, color: deviceActionMessage.color }}>{deviceActionMessage.text}</p> : null}
               {botDataError ? <p style={{ marginTop: 0, color: "#b91c1c" }}>{botDataError}</p> : null}
+              {!user?.email ? <LinkEmailCard currentEmail={user?.email ?? null} /> : null}
+              {user?.email ? (
+                <article style={cardStyle}>
+                  <p style={{ marginTop: 0, marginBottom: 8, fontWeight: 600 }}>Email привязан</p>
+                  <p style={{ marginTop: 0, marginBottom: 10, color: "#475569" }}>{user.email}</p>
+                  <Link href="/login" style={secondaryButtonStyle}>
+                    Сменить пароль
+                  </Link>
+                </article>
+              ) : null}
               {!linkedTelegramId ? (
                 <article style={cardStyle}>
                   <p style={{ marginTop: 0, marginBottom: 8, fontWeight: 600 }}>Привяжите Telegram</p>
@@ -527,7 +538,7 @@ export default async function AccountPage({
 
                   return (
                     <article key={invitedUser.id} style={cardStyle}>
-                      <p style={{ margin: 0, fontWeight: 600 }}>{invitedUser.email}</p>
+                      <p style={{ margin: 0, fontWeight: 600 }}>{invitedUser.email ?? "Telegram-only пользователь"}</p>
                       <p style={{ margin: "4px 0" }}>Дата регистрации: {new Date(invitedUser.createdAt).toLocaleString("ru-RU")}</p>
                       {reward ? (
                         <>

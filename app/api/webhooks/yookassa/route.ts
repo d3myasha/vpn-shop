@@ -111,6 +111,9 @@ export async function POST(request: NextRequest) {
     if (!subscription) {
       throw new BillingError("Подписка не найдена после проведения платежа", 500);
     }
+    if (!subscription.user.email) {
+      throw new BillingError("У пользователя отсутствует email для синхронизации в Remnawave", 409);
+    }
 
     const remnawaveResult = await syncRemnawaveSubscription({
       email: subscription.user.email,

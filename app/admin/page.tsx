@@ -370,6 +370,10 @@ export default async function AdminPage({
 
     for (const subscription of activeSubscriptions) {
       try {
+        if (!subscription.user.email) {
+          console.warn("remnawave_sync_skipped_no_email", subscription.id);
+          continue;
+        }
         const remnawaveResult = await syncRemnawaveSubscription({
           email: subscription.user.email,
           expiresAt: subscription.expiresAt,
@@ -669,7 +673,7 @@ export default async function AdminPage({
               <div style={{ display: "grid", gap: 8 }}>
                 {users.map((user) => (
                   <article key={user.id} style={cardStyle}>
-                    <p style={{ margin: "0 0 6px", fontWeight: 600 }}>{user.email}</p>
+                    <p style={{ margin: "0 0 6px", fontWeight: 600 }}>{user.email ?? "Telegram-only пользователь"}</p>
                     <p style={{ margin: "0 0 8px", color: "#475569" }}>
                       Текущая роль: <strong>{user.role}</strong>
                     </p>
