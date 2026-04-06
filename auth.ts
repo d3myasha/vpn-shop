@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { upsertTelegramUser, type TelegramAuthPayload } from "@/lib/telegram-auth";
+import { resolvePromotedRole } from "@/lib/admin-role";
 
 const signInSchema = z.object({
   email: z.string().email(),
@@ -83,6 +84,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) {
           return null;
+        }
+
+        const promotedRole = resolvePromotedRole(user.role, { email: user.email });
+        if (promotedRole !== user.role) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { role: promotedRole },
+          });
+          user.role = promotedRole;
         }
 
         return {

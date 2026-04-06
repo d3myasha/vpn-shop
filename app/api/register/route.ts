@@ -6,6 +6,7 @@ import { generateUniqueReferralCode, normalizeReferralCode, resolveReferralInvit
 import { logger } from "@/lib/logger";
 import { isEmailDomainAllowed } from "@/lib/email-policy";
 import { verifyRegistrationCode } from "@/lib/email-verification";
+import { resolveRoleForNewUser } from "@/lib/admin-role";
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -59,7 +60,8 @@ export async function POST(request: NextRequest) {
         email,
         passwordHash,
         referralCode,
-        referredByUserId
+        referredByUserId,
+        role: resolveRoleForNewUser({ email }),
       },
       select: {
         id: true,

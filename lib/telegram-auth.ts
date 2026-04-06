@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { generateUniqueReferralCode } from "@/lib/users";
 import { getBotUserByTelegramId, BotDbAdapterError } from "@/lib/bot-db-adapter";
+import { resolvePromotedRole, resolveRoleForNewUser } from "@/lib/admin-role";
 
 export type TelegramAuthPayload = {
   id: string;
@@ -121,6 +122,18 @@ export async function upsertTelegramUser(payload: TelegramAuthPayload) {
       await prisma.botIdentity.update({ where: { id: existingIdentity.id }, data: updateData });
     }
 
+    const promotedRole = resolvePromotedRole(existingIdentity.user.role, {
+      email: existingIdentity.user.email,
+      telegramId,
+    });
+    if (promotedRole !== existingIdentity.user.role) {
+      await prisma.user.update({
+        where: { id: existingIdentity.user.id },
+        data: { role: promotedRole },
+      });
+      return { ...existingIdentity.user, role: promotedRole };
+    }
+
     return existingIdentity.user;
   }
 
@@ -131,6 +144,7 @@ export async function upsertTelegramUser(payload: TelegramAuthPayload) {
       email,
       passwordHash: await bcrypt.hash(crypto.randomUUID(), 12),
       referralCode,
+      role: resolveRoleForNewUser({ email, telegramId }),
     },
   });
 
@@ -189,6 +203,18 @@ export async function linkTelegramToExistingUser(userId: string, payload: Telegr
       telegramId,
     },
   });
+
+  const promotedRole = resolvePromotedRole(targetUser.role, {
+    email: targetUser.email,
+    telegramId,
+  });
+  if (promotedRole !== targetUser.role) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { role: promotedRole },
+    });
+    return { ...targetUser, role: promotedRole };
+  }
 
   return targetUser;
 }

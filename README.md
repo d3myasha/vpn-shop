@@ -99,6 +99,18 @@ REDIS_URL=redis://redis:6379
 AUTH_SECRET=replace-with-random-secret
 NEXTAUTH_SECRET=replace-with-random-secret
 
+# Авто-назначение ролей (опционально, через запятую)
+# Поддерживается повышение до OWNER/ADMIN по email и/или telegram id.
+# Примеры:
+# OWNER_EMAILS=owner@d3mshop.site
+# OWNER_TELEGRAM_IDS=123456789
+# ADMIN_EMAILS=admin1@d3mshop.site,admin2@d3mshop.site
+# ADMIN_TELEGRAM_IDS=111111111,222222222
+OWNER_EMAILS=
+OWNER_TELEGRAM_IDS=
+ADMIN_EMAILS=
+ADMIN_TELEGRAM_IDS=
+
 # Публичный домен сайта (тот, куда заходят пользователи)
 NEXTAUTH_URL=https://d3mshop.site
 
@@ -206,6 +218,7 @@ bash scripts/reset-site-db.sh
 - Покупка из кабинета идёт через Telegram deep-link (`start=plan_<public_code>`), если `CHECKOUT_ENABLED=false`.
 - Если `CHECKOUT_ENABLED=true`, приложение использует internal checkout через YooKassa и Remnawave.
 - Для стабильных сессий достаточно держать постоянным `AUTH_SECRET`; `NEXTAUTH_SECRET` можно оставить тем же значением для обратной совместимости.
+- Можно автоматически выдавать роль `OWNER`/`ADMIN` через `.env` переменные `OWNER_*` и `ADMIN_*` (email и/или telegram id).
 
 ## Частые проблемы
 
