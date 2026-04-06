@@ -1,4 +1,4 @@
-import { getEnv } from "@/lib/env";
+import { getYookassaEnv } from "@/lib/env";
 
 const YOOKASSA_API_BASE = "https://api.yookassa.ru/v3";
 
@@ -33,7 +33,7 @@ export type YooPayment = {
 };
 
 function getBasicAuthHeader() {
-  const env = getEnv();
+  const env = getYookassaEnv();
   const encoded = Buffer.from(`${env.YOOKASSA_SHOP_ID}:${env.YOOKASSA_SECRET_KEY}`).toString("base64");
   return `Basic ${encoded}`;
 }
@@ -63,7 +63,7 @@ export async function createYooKassaPayment(params: {
   returnUrl?: string;
   metadata?: Record<string, string>;
 }) {
-  const env = getEnv();
+  const env = getYookassaEnv();
   const payload: YooCreatePaymentRequest = {
     amount: {
       value: params.amountRub.toFixed(2),

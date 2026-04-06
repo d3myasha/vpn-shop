@@ -4,6 +4,7 @@ import { calculateDiscountRub, resolveCheckoutUser, validatePromoCode, BillingEr
 import { createYooKassaPayment } from "@/lib/yookassa";
 import { auth } from "@/auth";
 import { logger } from "@/lib/logger";
+import { normalizeReferralCode, resolveReferralInviter } from "@/lib/users";
 
 type CheckoutInput = {
   planCode?: string;
@@ -76,10 +77,14 @@ export async function POST(request: NextRequest) {
 
     const user = await resolveCheckoutUser(session.user.id);
 
-    if (input.referralCode && !user.referredByUserId && input.referralCode !== user.referralCode) {
-      const inviter = await prisma.user.findUnique({
-        where: { referralCode: input.referralCode.trim().toUpperCase() }
+    const normalizedReferralCode = normalizeReferralCode(input.referralCode);
+    if (normalizedReferralCode && !user.referredByUserId) {
+      const inviter = await resolveReferralInviter({
+        referralCode: normalizedReferralCode,
+        userId: user.id,
+        userReferralCode: user.referralCode,
       });
+
       if (inviter) {
         await prisma.user.update({
           where: { id: user.id },

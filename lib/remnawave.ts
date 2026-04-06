@@ -1,4 +1,4 @@
-import { getEnv } from "@/lib/env";
+import { getRemnawaveEnv } from "@/lib/env";
 
 type RemnawaveUser = {
   uuid: string;
@@ -62,7 +62,7 @@ type RemnawaveExternalSquadsResponse = {
 };
 
 function buildAuthHeader() {
-  const env = getEnv();
+  const env = getRemnawaveEnv();
   const headerName = env.REMNAWAVE_API_HEADER_NAME;
   const value = env.REMNAWAVE_API_HEADER_PREFIX
     ? `${env.REMNAWAVE_API_HEADER_PREFIX} ${env.REMNAWAVE_API_KEY}`
@@ -114,7 +114,7 @@ export async function listRemnawaveSquads() {
 }
 
 async function remnawaveRequest<T>(path: string, init: RequestInit): Promise<T> {
-  const env = getEnv();
+  const env = getRemnawaveEnv();
   const apiBase = env.REMNAWAVE_API_URL.replace(/\/+$/, "");
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const finalPath =

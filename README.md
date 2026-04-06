@@ -2,6 +2,25 @@
 
 Сайт-магазин VPN как отдельный сервис поверх backend бота Remnashop.
 
+## Режимы работы checkout
+
+Проект поддерживает два сценария оплаты, и набор обязательных переменных окружения зависит от выбранного сценария:
+
+### 1. Plugin checkout / Telegram deep-link
+Основной сценарий для связки с ботом Remnashop:
+- бот уже запущен отдельно;
+- сайт поднимается как внешний storefront;
+- покупка уводит пользователя в Telegram deep-link;
+- для этого режима обязательно настроить доступ к БД бота и Telegram auth;
+- переменные YooKassa и Remnawave нужны только если используется внутренний checkout сайта.
+
+### 2. Internal checkout / YooKassa + Remnawave
+Альтернативный сценарий:
+- сайт сам создаёт платеж в YooKassa;
+- webhook подтверждает оплату;
+- подписка синхронизируется с Remnawave;
+- для этого режима обязательны `YOOKASSA_*` и `REMNAWAVE_*`.
+
 ## Главный сценарий: VPS + бот + GHCR (без клонирования репо)
 
 Этот сценарий основной:
@@ -75,7 +94,8 @@ DATABASE_URL=postgresql://vpn_user:vpn_pass@postgres:5432/vpn_shop?schema=public
 # Redis сайта (локальный redis из этого же docker-compose)
 REDIS_URL=redis://redis:6379
 
-# Секреты сессии (важно: держи одинаковыми, чтобы не было JWTSessionError)
+# Секреты сессии
+# Достаточно AUTH_SECRET. NEXTAUTH_SECRET можно оставить таким же значением для совместимости.
 AUTH_SECRET=replace-with-random-secret
 NEXTAUTH_SECRET=replace-with-random-secret
 
@@ -83,7 +103,9 @@ NEXTAUTH_SECRET=replace-with-random-secret
 NEXTAUTH_URL=https://d3mshop.site
 
 # Включатель checkout сайта
-CHECKOUT_ENABLED=true
+# true  = включен внутренний checkout сайта
+# false = внутренний checkout отключен, используется plugin / deep-link flow
+CHECKOUT_ENABLED=false
 
 # Telegram-бот для входа/привязки (username без @)
 TELEGRAM_BOT_TOKEN=replace
@@ -105,6 +127,17 @@ RESEND_FROM=VPN Shop <no-reply@d3mshop.site>
 
 # Разрешенные домены email для регистрации/входа
 ALLOWED_EMAIL_DOMAINS=gmail.com,inbox.ru,mail.ru,yandex.ru,icloud.com,d3mvpn.local,vpn.local,localhost
+
+# Эти переменные обязательны только для internal checkout через YooKassa
+YOOKASSA_SHOP_ID=replace
+YOOKASSA_SECRET_KEY=replace
+YOOKASSA_RETURN_URL=https://d3mshop.site/account
+
+# Эти переменные обязательны только для internal checkout с синхронизацией в Remnawave
+REMNAWAVE_API_URL=https://your-remnawave-host
+REMNAWAVE_API_KEY=replace
+REMNAWAVE_API_HEADER_NAME=Authorization
+REMNAWAVE_API_HEADER_PREFIX=Bearer
 ```
 
 ### 4) Общая сеть с ботом
@@ -170,8 +203,9 @@ bash scripts/reset-site-db.sh
 - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` указывать **без `@`**.
 - В BotFather должен быть настроен `/setdomain` на домен сайта.
 - `REMNASHOP_DATABASE_URL` используется только для read-only чтения данных бота.
-- Покупка из кабинета идёт через Telegram deep-link (`start=plan_<public_code>`).
-- Для стабильных сессий держи одинаковые `AUTH_SECRET` и `NEXTAUTH_SECRET` (или оставь только `AUTH_SECRET` и не меняй его).
+- Покупка из кабинета идёт через Telegram deep-link (`start=plan_<public_code>`), если `CHECKOUT_ENABLED=false`.
+- Если `CHECKOUT_ENABLED=true`, приложение использует internal checkout через YooKassa и Remnawave.
+- Для стабильных сессий достаточно держать постоянным `AUTH_SECRET`; `NEXTAUTH_SECRET` можно оставить тем же значением для обратной совместимости.
 
 ## Частые проблемы
 

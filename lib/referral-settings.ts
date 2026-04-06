@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getEnv } from "@/lib/env";
+import { getBaseEnv } from "@/lib/env";
 import { Prisma } from "@prisma/client";
 
 export const REFERRAL_SETTINGS_ID = "default";
@@ -14,7 +14,7 @@ function isMissingReferralSettingsTable(error: unknown) {
 }
 
 export async function getOrCreateReferralSettings() {
-  const env = getEnv();
+  const env = getBaseEnv();
   try {
     const existing = await prisma.referralSettings.findUnique({
       where: { id: REFERRAL_SETTINGS_ID }

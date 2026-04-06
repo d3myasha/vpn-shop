@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEnv } from "@/lib/env";
+import { getBaseEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { activatePaymentAndSubscription, BillingError } from "@/lib/billing";
 import { getYooKassaPayment } from "@/lib/yookassa";
@@ -30,7 +30,7 @@ function toRubInt(value: string | undefined) {
 
 export async function POST(request: NextRequest) {
   try {
-    getEnv();
+    getBaseEnv();
     const sourceIp = getRequestIp(request.headers);
     const ipAllowlistEnabled = process.env.YOOKASSA_WEBHOOK_IP_ALLOWLIST_ENABLED !== "false";
 

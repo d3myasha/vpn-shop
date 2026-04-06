@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { generateUniqueReferralCode } from "@/lib/users";
+import { generateUniqueReferralCode, normalizeReferralCode, resolveReferralInviter } from "@/lib/users";
 import { logger } from "@/lib/logger";
 import { isEmailDomainAllowed } from "@/lib/email-policy";
 import { verifyRegistrationCode } from "@/lib/email-verification";
@@ -47,16 +47,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: verification.reason }, { status: 400 });
     }
 
-    let referredByUserId: string | null = null;
-    if (parsed.data.referralCode) {
-      const inviter = await prisma.user.findUnique({
-        where: { referralCode: parsed.data.referralCode },
-        select: { id: true }
-      });
-      if (inviter) {
-        referredByUserId = inviter.id;
-      }
-    }
+    const normalizedReferralCode = normalizeReferralCode(parsed.data.referralCode);
+    const inviter = await resolveReferralInviter({ referralCode: normalizedReferralCode });
+    const referredByUserId = inviter?.id ?? null;
 
     const passwordHash = await bcrypt.hash(parsed.data.password, 12);
     const referralCode = await generateUniqueReferralCode();

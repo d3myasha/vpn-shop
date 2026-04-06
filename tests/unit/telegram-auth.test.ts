@@ -45,4 +45,21 @@ describe("telegram auth verification", () => {
     const result = verifyTelegramAuthPayload(payload);
     expect(result.ok).toBe(false);
   });
+
+  test("rejects expired payload", () => {
+    process.env.TELEGRAM_BOT_TOKEN = "123456:TEST_TOKEN";
+    process.env.TELEGRAM_AUTH_MAX_AGE_SECONDS = "60";
+
+    const payload = {
+      id: "100500",
+      first_name: "D",
+      auth_date: String(Math.floor(Date.now() / 1000) - 120),
+      hash: "",
+    };
+
+    payload.hash = signPayload(payload, process.env.TELEGRAM_BOT_TOKEN as string);
+
+    const result = verifyTelegramAuthPayload(payload);
+    expect(result.ok).toBe(false);
+  });
 });

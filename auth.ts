@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { upsertTelegramUser, type TelegramAuthPayload } from "@/lib/telegram-auth";
+import { getAuthEnv } from "@/lib/env";
 
 const signInSchema = z.object({
   email: z.string().email(),
@@ -20,8 +21,10 @@ const telegramSignInSchema = z.object({
   hash: z.coerce.string().min(1),
 });
 
+const { AUTH_SECRET, NEXTAUTH_SECRET } = getAuthEnv();
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+  secret: AUTH_SECRET ?? NEXTAUTH_SECRET,
   trustHost: true,
   providers: [
     Credentials({
