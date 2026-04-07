@@ -24,6 +24,9 @@ function readQueryValue(value: string | string[] | undefined) {
 }
 
 function resolveAdminTab(rawTab: string | undefined): AdminTab {
+  if (rawTab === "plans") {
+    return "users";
+  }
   if (rawTab && ADMIN_TABS.includes(rawTab as AdminTab)) {
     return rawTab as AdminTab;
   }
@@ -612,9 +615,6 @@ export default async function AdminPage({
             <Link href={adminTabHref("users")} className={`panel-nav-link ${activeTab === "users" ? "is-active" : ""}`}>
               Пользователи и синхронизация
             </Link>
-            <Link href={adminTabHref("plans")} className={`panel-nav-link ${activeTab === "plans" ? "is-active" : ""}`}>
-              Планы
-            </Link>
             <Link href={adminTabHref("promocodes")} className={`panel-nav-link ${activeTab === "promocodes" ? "is-active" : ""}`}>
               Промокоды
             </Link>
@@ -628,9 +628,6 @@ export default async function AdminPage({
           <nav className="panel-mobile-tabs" aria-label="Навигация админки (мобильная)">
             <Link href={adminTabHref("users")} className={`panel-nav-link ${activeTab === "users" ? "is-active" : ""}`}>
               Пользователи
-            </Link>
-            <Link href={adminTabHref("plans")} className={`panel-nav-link ${activeTab === "plans" ? "is-active" : ""}`}>
-              Планы
             </Link>
             <Link href={adminTabHref("promocodes")} className={`panel-nav-link ${activeTab === "promocodes" ? "is-active" : ""}`}>
               Промокоды
