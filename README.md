@@ -231,6 +231,13 @@ bash scripts/cleanup-legacy-telegram-local-emails.sh
 
 - `deploy/patches/remnashop-v0.7.4-storefront-checkout.patch`
 
+Если не хочешь держать исходники бота как git-репо, используй готовый in-place скрипт:
+
+- `scripts/patch-remnashop-storefront.sh`
+
+Он вносит правки прямо в контейнер `remnashop` через `docker exec`.
+Важно: после пересборки/обновления образа бота такой patch нужно запускать снова.
+
 ### Шаг 1) Обновить репо шопа на VPS
 
 ```bash
@@ -239,6 +246,16 @@ git pull
 ```
 
 ### Шаг 2) Применить patch к боту Remnashop
+
+Вариант A (без git-репо бота, рекомендуется для твоего сценария):
+
+```bash
+cd /opt/vpn-shop
+chmod +x scripts/patch-remnashop-storefront.sh
+STOREFRONT_TOKEN='replace_with_long_random_token' ./scripts/patch-remnashop-storefront.sh
+```
+
+Вариант B (через git patch):
 
 ```bash
 cd /opt/remnashop
