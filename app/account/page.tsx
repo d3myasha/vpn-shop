@@ -446,7 +446,7 @@ export default async function AccountPage({
                               }}
                             />
                             <button type="submit" style={buttonStyle}>
-                              Купить через Telegram
+                              Оплатить
                             </button>
                           </form>
                         </article>

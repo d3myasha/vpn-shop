@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveOrCreateBotIdentityForUser } from "@/lib/bot-identity";
-import { buildBotPlanDeepLink, getBotPlans, isBotDbConfigured, BotDbAdapterError } from "@/lib/bot-db-adapter";
+import { getBotPlans, isBotDbConfigured, BotDbAdapterError } from "@/lib/bot-db-adapter";
+import { createBotCheckout, BotApiError } from "@/lib/bot-api";
 import { logger } from "@/lib/logger";
 
 type CheckoutInput = {
@@ -73,6 +74,7 @@ export async function POST(request: NextRequest) {
         botIdentity: {
           select: {
             telegramId: true,
+            botUserId: true,
           },
         },
       },
@@ -86,10 +88,14 @@ export async function POST(request: NextRequest) {
       throw new BotDbAdapterError("Сначала привяжите Telegram-аккаунт к профилю", 409);
     }
 
-    await resolveOrCreateBotIdentityForUser({
+    const identity = await resolveOrCreateBotIdentityForUser({
       userId: user.id,
       telegramId,
     });
+    const botUserId = identity?.botUserId ?? user.botIdentity?.botUserId ?? null;
+    if (!botUserId) {
+      throw new BotDbAdapterError("Не удалось определить botUserId для оплаты", 409);
+    }
 
     const availablePlans = await getBotPlans();
     const selectedPlan = availablePlans.find((plan) => plan.publicCode === planCode);
@@ -97,25 +103,27 @@ export async function POST(request: NextRequest) {
       throw new BotDbAdapterError("Тариф не найден в backend бота", 404);
     }
 
-    const checkoutLink = buildBotPlanDeepLink(selectedPlan.publicCode);
-    const url = new URL(checkoutLink);
-    if (input.promoCode?.trim()) {
-      url.searchParams.set("promo", input.promoCode.trim());
-    }
-    if (input.referralCode?.trim()) {
-      url.searchParams.set("ref", input.referralCode.trim().toUpperCase());
-    }
+    const returnUrl = new URL("/account?tab=subscription", origin).toString();
+    const checkout = await createBotCheckout({
+      botUserId,
+      planCode: selectedPlan.publicCode,
+      promoCode: input.promoCode?.trim() || undefined,
+      referralCode: input.referralCode?.trim().toUpperCase() || undefined,
+      returnUrl,
+      source: "vpn-shop-web",
+    });
 
     if (wantsRedirect) {
-      return NextResponse.redirect(url.toString(), 303);
+      return NextResponse.redirect(checkout.checkoutUrl, 303);
     }
 
     return NextResponse.json({
-      redirectUrl: url.toString(),
-      mode: "telegram_deeplink",
+      redirectUrl: checkout.checkoutUrl,
+      mode: "browser_checkout",
     });
   } catch (error) {
-    const statusCode = error instanceof BotDbAdapterError ? error.statusCode : 502;
+    const statusCode =
+      error instanceof BotDbAdapterError || error instanceof BotApiError ? error.statusCode : 502;
     const message = error instanceof Error ? error.message : "Checkout failed";
     logger.error("plugin_checkout_failed", error, { statusCode, route: "/api/plugin/checkout" });
 

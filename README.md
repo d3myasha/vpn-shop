@@ -6,16 +6,17 @@
 
 Проект поддерживает два сценария оплаты, и набор обязательных переменных окружения зависит от выбранного сценария:
 
-### 1. Plugin checkout / Telegram deep-link
+### 1. Plugin checkout / Bot-side web checkout
 Основной сценарий для связки с ботом Remnashop:
 - бот уже запущен отдельно;
 - сайт поднимается как внешний storefront;
-- покупка уводит пользователя в Telegram deep-link;
-- для этого режима обязательно настроить доступ к БД бота и Telegram auth;
-- переменные YooKassa и Remnawave нужны только если используется внутренний checkout сайта.
+- покупка создаётся через API бота и открывается в браузере по `checkoutUrl`;
+- webhook YooKassa обслуживается ботом (например `https://bot.demyasha.ru/api/v1/payments/yookassa`);
+- для этого режима обязательно настроить доступ к БД бота, Telegram auth и `REMNASHOP_API_*`;
+- переменные YooKassa и Remnawave на сайте не обязательны.
 
-### 2. Internal checkout / YooKassa + Remnawave
-Альтернативный сценарий:
+### 2. Internal checkout / YooKassa + Remnawave (legacy)
+Опциональный legacy-сценарий:
 - сайт сам создаёт платеж в YooKassa;
 - webhook подтверждает оплату;
 - подписка синхронизируется с Remnawave;
@@ -28,7 +29,7 @@
 - сайт поднимается отдельно,
 - используется только `docker-compose.yml` и `.env`,
 - образ берётся из `ghcr.io/d3myasha/vpn-shop:latest`,
-- отдельный bot API для checkout **не нужен** (используется Telegram deep-link flow).
+- используется bot API для checkout (`POST /api/v1/payments/create`), webhook остаётся на стороне бота.
 
 Публичный GHCR не требует `docker login`.
 
@@ -114,9 +115,9 @@ ADMIN_TELEGRAM_IDS=
 # Публичный домен сайта (тот, куда заходят пользователи)
 NEXTAUTH_URL=https://d3mshop.site
 
-# Включатель checkout сайта
-# true  = включен внутренний checkout сайта
-# false = внутренний checkout отключен, используется plugin / deep-link flow
+# Включатель legacy internal checkout сайта
+# true  = сайт использует собственный internal checkout (legacy)
+# false = основная схема: bot-side web checkout через API бота
 CHECKOUT_ENABLED=false
 
 # Telegram-бот для входа/привязки (username без @)
@@ -132,6 +133,11 @@ REMNASHOP_DB_IDLE_MS=10000
 REMNASHOP_DB_CONNECT_TIMEOUT_MS=5000
 REMNASHOP_DB_SSL=false
 REMNASHOP_DB_SSL_REJECT_UNAUTHORIZED=true
+
+# API бота для создания web checkout
+REMNASHOP_API_BASE_URL=https://bot.demyasha.ru
+REMNASHOP_API_TOKEN=replace
+REMNASHOP_API_TIMEOUT_MS=10000
 
 # Email-коды входа/регистрации (Resend)
 RESEND_API_KEY=re_xxxxxxxxx
@@ -225,8 +231,9 @@ bash scripts/cleanup-legacy-telegram-local-emails.sh
 - В BotFather должен быть настроен `/setdomain` на домен сайта.
 - `REMNASHOP_DATABASE_URL` используется только для read-only чтения данных бота.
 - Synthetic email больше не создается: Telegram-first пользователь может существовать без email, а email привязывается позже из `/account`.
-- Покупка из кабинета идёт через Telegram deep-link (`start=plan_<public_code>`), если `CHECKOUT_ENABLED=false`.
-- Если `CHECKOUT_ENABLED=true`, приложение использует internal checkout через YooKassa и Remnawave.
+- Покупка из кабинета по умолчанию идёт через bot-side web checkout (`POST /api/v1/payments/create`).
+- Webhook YooKassa для этого потока обрабатывается ботом (`bot.demyasha.ru`), а не сайтом.
+- `CHECKOUT_ENABLED=true` включает legacy internal checkout на стороне сайта.
 - Для стабильных сессий достаточно держать постоянным `AUTH_SECRET`; `NEXTAUTH_SECRET` можно оставить тем же значением для обратной совместимости.
 - Можно автоматически выдавать роль `OWNER`/`ADMIN` через `.env` переменные `OWNER_*` и `ADMIN_*` (email и/или telegram id).
 
@@ -243,7 +250,8 @@ bash scripts/cleanup-legacy-telegram-local-emails.sh
   - проверь доступ: `docker run --rm --network remna_shared_net -e PGPASSWORD='<REAL_PASS>' postgres:18 psql -h remnashop-db -U shop_ro -d remnashop -c 'select 1;'`
 - Ошибка checkout:
   - не привязан Telegram в профиле сайта,
-  - план не найден в backend бота.
+  - план не найден в backend бота,
+  - не настроены `REMNASHOP_API_BASE_URL` / `REMNASHOP_API_TOKEN`.
 - `502` от прокси:
   - приложение не слушает `3001`,
   - прокси смотрит не на тот upstream.
