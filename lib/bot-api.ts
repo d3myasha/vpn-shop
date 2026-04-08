@@ -43,8 +43,19 @@ function getTimeoutMs() {
 
 function buildErrorMessage(status: number, body: unknown) {
   if (body && typeof body === "object") {
-    const payload = body as { error?: unknown; message?: unknown };
-    const message = typeof payload.error === "string" ? payload.error : typeof payload.message === "string" ? payload.message : null;
+    const payload = body as {
+      error?: unknown;
+      message?: unknown;
+      detail?: unknown;
+    };
+    const message =
+      typeof payload.error === "string"
+        ? payload.error
+        : typeof payload.message === "string"
+          ? payload.message
+          : typeof payload.detail === "string"
+            ? payload.detail
+            : null;
     if (message) {
       return message;
     }
