@@ -225,6 +225,112 @@ cd /opt/vpn-shop
 bash scripts/cleanup-legacy-telegram-local-emails.sh
 ```
 
+## Полный гайд: применить патч бота из репо шопа и обновить VPS
+
+Патч для Remnashop уже лежит в этом репо:
+
+- `deploy/patches/remnashop-v0.7.4-storefront-checkout.patch`
+
+### Шаг 1) Обновить репо шопа на VPS
+
+```bash
+cd /opt/vpn-shop
+git pull
+```
+
+### Шаг 2) Применить patch к боту Remnashop
+
+```bash
+cd /opt/remnashop
+git fetch --all --tags
+git checkout v0.7.4
+git checkout -b feat/storefront-checkout-api-074 || git checkout feat/storefront-checkout-api-074
+git apply /opt/vpn-shop/deploy/patches/remnashop-v0.7.4-storefront-checkout.patch
+```
+
+Проверка:
+
+```bash
+git status --short
+```
+
+Должны измениться 4 файла:
+
+- `src/web/endpoints/payments.py`
+- `src/core/config/app.py`
+- `src/application/common/dao/user.py`
+- `src/infrastructure/database/dao/user.py`
+
+### Шаг 3) Настроить `.env` бота
+
+Добавь в `/opt/remnashop/.env`:
+
+```env
+APP_STOREFRONT_API_TOKEN=replace_with_long_random_token
+```
+
+Перезапуск бота:
+
+```bash
+cd /opt/remnashop
+docker compose up -d --build
+docker compose logs --tail=120 app
+```
+
+### Шаг 4) Настроить `.env` шопа
+
+Добавь/проверь в `/opt/vpn-shop/.env`:
+
+```env
+REMNASHOP_API_BASE_URL=https://bot.demyasha.ru
+REMNASHOP_API_TOKEN=replace_with_long_random_token
+REMNASHOP_API_TIMEOUT_MS=10000
+REMNASHOP_DATABASE_URL=postgresql://shop_ro:REAL_PASSWORD@remnashop-db:5432/remnashop
+```
+
+### Шаг 5) Проверить read-only доступ шопа к БД бота
+
+Если пользователя `shop_ro` ещё нет, создай его в БД бота:
+
+```sql
+CREATE ROLE shop_ro LOGIN PASSWORD 'REAL_PASSWORD';
+GRANT CONNECT ON DATABASE remnashop TO shop_ro;
+GRANT USAGE ON SCHEMA public TO shop_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO shop_ro;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO shop_ro;
+```
+
+Проверка подключения:
+
+```bash
+docker run --rm --network remna_shared_net -e PGPASSWORD='REAL_PASSWORD' postgres:18 \
+  psql -h remnashop-db -U shop_ro -d remnashop -c 'select 1;'
+```
+
+### Шаг 6) Перезапустить шоп
+
+```bash
+cd /opt/vpn-shop
+docker compose pull
+docker compose up -d --force-recreate app
+docker compose exec app npm run prisma:deploy
+docker compose logs --tail=120 app
+```
+
+### Шаг 7) Финальный smoke-check
+
+```bash
+curl -s https://d3mshop.site/api/health
+curl -I https://d3mshop.site/account
+curl -s https://d3mshop.site/ | grep -F "Тарифы"
+```
+
+Ожидаемый результат:
+
+- главная не показывает `Тарифы временно недоступны`;
+- в кабинете кнопка `Оплатить` ведёт на web checkout;
+- webhook остаётся на стороне бота: `https://bot.demyasha.ru/api/v1/payments/yookassa`.
+
 ## Что важно знать
 
 - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` указывать **без `@`**.
