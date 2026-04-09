@@ -4,12 +4,24 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { isEmailDomainAllowed } from "@/lib/email-policy";
 import { sendEmailLinkVerificationCode } from "@/lib/email-verification";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Rate limiting: 5 запросов в минуту на пользователя
+    const rateLimitKey = `rate-limit:link-email-request-code:${session.user.id}`;
+    const isAllowed = await checkRateLimit({ key: rateLimitKey, limitPerMinute: 5 });
+    
+    if (!isAllowed) {
+      return NextResponse.json(
+        { error: "Слишком много запросов. Попробуйте позже" },
+        { status: 429 }
+      );
     }
 
     const body = (await request.json().catch(() => ({}))) as { email?: string };
@@ -41,8 +53,7 @@ export async function POST(request: NextRequest) {
     await sendEmailLinkVerificationCode(email);
     return NextResponse.json({ ok: true, sent: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Не удалось отправить код";
     logger.error("account_link_email_request_code_failed", error, { route: "/api/account/link-email/request-code" });
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Не удалось отправить код подтверждения" }, { status: 500 });
   }
 }

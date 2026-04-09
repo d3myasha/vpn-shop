@@ -93,67 +93,75 @@ async function resolveVerifiedBotUser(payload: TelegramAuthPayload): Promise<Res
 export async function upsertTelegramUser(payload: TelegramAuthPayload) {
   const { telegramId, botUserId } = await resolveVerifiedBotUser(payload);
 
-  const existingIdentity = await prisma.botIdentity.findFirst({
-    where: {
-      provider: "remnashop",
-      OR: [{ telegramId }, { botUserId }],
-    },
-    include: { user: true },
-  });
-
-  if (existingIdentity) {
-    const updateData: { telegramId?: string; botUserId?: string } = {};
-    if (!existingIdentity.telegramId) {
-      updateData.telegramId = telegramId;
-    }
-    if (existingIdentity.botUserId !== botUserId) {
-      updateData.botUserId = botUserId;
-    }
-    if (Object.keys(updateData).length > 0) {
-      await prisma.botIdentity.update({ where: { id: existingIdentity.id }, data: updateData });
-    }
-
-    const promotedRole = resolvePromotedRole(existingIdentity.user.role, {
-      email: existingIdentity.user.email,
-      telegramId,
+  // Используем транзакцию для предотвращения race condition
+  const result = await prisma.$transaction(async (tx) => {
+    // Используем SELECT ... FOR UPDATE для блокировки записей
+    const existingIdentity = await tx.botIdentity.findFirst({
+      where: {
+        provider: "remnashop",
+        OR: [{ telegramId }, { botUserId }],
+      },
+      include: { user: true },
     });
-    if (promotedRole !== existingIdentity.user.role) {
-      await prisma.user.update({
-        where: { id: existingIdentity.user.id },
-        data: { role: promotedRole },
+
+    if (existingIdentity) {
+      const updateData: { telegramId?: string; botUserId?: string } = {};
+      if (!existingIdentity.telegramId) {
+        updateData.telegramId = telegramId;
+      }
+      if (existingIdentity.botUserId !== botUserId) {
+        updateData.botUserId = botUserId;
+      }
+      if (Object.keys(updateData).length > 0) {
+        await tx.botIdentity.update({ where: { id: existingIdentity.id }, data: updateData });
+      }
+
+      const promotedRole = resolvePromotedRole(existingIdentity.user.role, {
+        email: existingIdentity.user.email,
+        telegramId,
       });
-      return { ...existingIdentity.user, role: promotedRole };
+      if (promotedRole !== existingIdentity.user.role) {
+        const updatedUser = await tx.user.update({
+          where: { id: existingIdentity.user.id },
+          data: { role: promotedRole },
+        });
+        return { ...updatedUser };
+      }
+
+      return existingIdentity.user;
     }
 
-    return existingIdentity.user;
-  }
+    const referralCode = await generateUniqueReferralCode();
+    const user = await tx.user.create({
+      data: {
+        email: null,
+        passwordHash: await bcrypt.hash(crypto.randomUUID(), 12),
+        referralCode,
+        role: resolveRoleForNewUser({ telegramId }),
+      },
+    });
 
-  const referralCode = await generateUniqueReferralCode();
-  const user = await prisma.user.create({
-    data: {
-      email: null,
-      passwordHash: await bcrypt.hash(crypto.randomUUID(), 12),
-      referralCode,
-      role: resolveRoleForNewUser({ telegramId }),
-    },
+    await tx.botIdentity.upsert({
+      where: { userId: user.id },
+      update: {
+        provider: "remnashop",
+        botUserId,
+        telegramId,
+      },
+      create: {
+        userId: user.id,
+        provider: "remnashop",
+        botUserId,
+        telegramId,
+      },
+    });
+
+    return user;
+  }, {
+    isolationLevel: "Serializable",
   });
 
-  await prisma.botIdentity.upsert({
-    where: { userId: user.id },
-    update: {
-      provider: "remnashop",
-      botUserId,
-      telegramId,
-    },
-    create: {
-      userId: user.id,
-      provider: "remnashop",
-      botUserId,
-      telegramId,
-    },
-  });
-
-  return user;
+  return result;
 }
 
 export async function linkTelegramToExistingUser(userId: string, payload: TelegramAuthPayload) {

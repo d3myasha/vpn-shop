@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveOrCreateBotIdentityForUser } from "@/lib/bot-identity";
@@ -6,17 +7,28 @@ import { getBotPlans, isBotDbConfigured, BotDbAdapterError } from "@/lib/bot-db-
 import { createBotCheckout, BotApiError } from "@/lib/bot-api";
 import { logger } from "@/lib/logger";
 
-type CheckoutInput = {
-  planCode?: string;
-  promoCode?: string;
-  referralCode?: string;
-};
+const checkoutInputSchema = z.object({
+  planCode: z.string().trim().min(1).max(64),
+  promoCode: z.string().trim().max(64).optional(),
+  referralCode: z.string().trim().max(32).optional(),
+});
 
-function getPublicOrigin(request: NextRequest) {
+const ALLOWED_HOSTS = new Set([
+  process.env.APP_DOMAIN,
+  process.env.NEXT_PUBLIC_APP_DOMAIN,
+].filter(Boolean));
+
+function getPublicOrigin(request: NextRequest): string {
   const forwardedHost = request.headers.get("x-forwarded-host");
   const forwardedProto = request.headers.get("x-forwarded-proto");
+  
+  // Валидация x-forwarded-host для предотвращения Host Header Injection
   if (forwardedHost) {
-    const proto = forwardedProto ?? "https";
+    if (ALLOWED_HOSTS.size > 0 && !ALLOWED_HOSTS.has(forwardedHost)) {
+      logger.warn("host_header_injection_blocked", { forwardedHost, allowedHosts: [...ALLOWED_HOSTS] });
+      return request.nextUrl.origin;
+    }
+    const proto = forwardedProto === "http" || forwardedProto === "https" ? forwardedProto : "https";
     return `${proto}://${forwardedHost}`;
   }
   return request.nextUrl.origin;
@@ -27,21 +39,25 @@ export async function POST(request: NextRequest) {
   const wantsRedirect = contentType.includes("application/x-www-form-urlencoded");
   const origin = getPublicOrigin(request);
 
-  let input: CheckoutInput = {};
+  let input: z.infer<typeof checkoutInputSchema>;
   if (wantsRedirect) {
     const formData = await request.formData();
-    input = {
-      planCode: String(formData.get("planCode") ?? ""),
-      promoCode: String(formData.get("promoCode") ?? ""),
-      referralCode: String(formData.get("referralCode") ?? ""),
-    };
+    const parseResult = checkoutInputSchema.safeParse({
+      planCode: formData.get("planCode") ?? "",
+      promoCode: formData.get("promoCode") ?? undefined,
+      referralCode: formData.get("referralCode") ?? undefined,
+    });
+    if (!parseResult.success) {
+      return NextResponse.json({ error: "Неверный формат запроса" }, { status: 400 });
+    }
+    input = parseResult.data;
   } else {
-    input = (await request.json()) as CheckoutInput;
-  }
-
-  const planCode = String(input.planCode ?? "").trim();
-  if (!planCode) {
-    return NextResponse.json({ error: "planCode is required" }, { status: 400 });
+    const body = await request.json();
+    const parseResult = checkoutInputSchema.safeParse(body);
+    if (!parseResult.success) {
+      return NextResponse.json({ error: "Неверный формат запроса" }, { status: 400 });
+    }
+    input = parseResult.data;
   }
 
   const session = await auth();
@@ -98,7 +114,7 @@ export async function POST(request: NextRequest) {
     }
 
     const availablePlans = await getBotPlans();
-    const selectedPlan = availablePlans.find((plan) => plan.publicCode === planCode);
+    const selectedPlan = availablePlans.find((plan) => plan.publicCode === input.planCode);
     if (!selectedPlan) {
       throw new BotDbAdapterError("Тариф не найден в backend бота", 404);
     }
@@ -124,15 +140,14 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const statusCode =
       error instanceof BotDbAdapterError || error instanceof BotApiError ? error.statusCode : 502;
-    const message = error instanceof Error ? error.message : "Checkout failed";
     logger.error("plugin_checkout_failed", error, { statusCode, route: "/api/plugin/checkout" });
 
     if (wantsRedirect) {
       return NextResponse.redirect(
-        new URL(`/account?tab=subscription&error=${encodeURIComponent(message)}`, origin),
+        new URL(`/account?tab=subscription&error=${encodeURIComponent("Ошибка создания платежа")}`, origin),
         303,
       );
     }
-    return NextResponse.json({ error: message }, { status: statusCode });
+    return NextResponse.json({ error: "Ошибка создания платежа" }, { status: statusCode });
   }
 }

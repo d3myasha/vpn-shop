@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 import { isEmailDomainAllowed } from "@/lib/email-policy";
 import { verifyRegistrationCode } from "@/lib/email-verification";
 import { resolveRoleForNewUser } from "@/lib/admin-role";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -18,6 +19,18 @@ const registerSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting: 3 попытки регистрации в минуту на IP
+    const clientIp = request.headers.get("x-forwarded-for")?.split(",")[0] ?? "unknown";
+    const rateLimitKey = `rate-limit:register:${clientIp}`;
+    const isAllowed = await checkRateLimit({ key: rateLimitKey, limitPerMinute: 3 });
+    
+    if (!isAllowed) {
+      return NextResponse.json(
+        { error: "Слишком много попыток. Попробуйте позже" },
+        { status: 429 }
+      );
+    }
+
     const body = (await request.json()) as unknown;
     const parsed = registerSchema.safeParse(body);
     if (!parsed.success) {
@@ -71,8 +84,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ user }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Ошибка регистрации";
     logger.error("register_failed", error, { route: "/api/register" });
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Ошибка регистрации" }, { status: 500 });
   }
 }

@@ -5,12 +5,24 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { verifyRegistrationCode } from "@/lib/email-verification";
 import { resolvePromotedRole } from "@/lib/admin-role";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Rate limiting: 5 попыток в минуту на пользователя
+    const rateLimitKey = `rate-limit:link-email-confirm:${session.user.id}`;
+    const isAllowed = await checkRateLimit({ key: rateLimitKey, limitPerMinute: 5 });
+    
+    if (!isAllowed) {
+      return NextResponse.json(
+        { error: "Слишком много попыток. Попробуйте позже" },
+        { status: 429 }
+      );
     }
 
     const body = (await request.json().catch(() => ({}))) as {
@@ -72,8 +84,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, linked: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Не удалось привязать email";
     logger.error("account_link_email_confirm_failed", error, { route: "/api/account/link-email/confirm" });
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Не удалось привязать email" }, { status: 500 });
   }
 }

@@ -2,9 +2,12 @@ import Redis from "ioredis";
 
 type InMemoryBucket = {
   timestamps: number[];
+  lastCleanup: number;
 };
 
 const inMemoryBuckets = new Map<string, InMemoryBucket>();
+const MAX_IN_MEMORY_BUCKETS = 10_000;
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 минут
 
 let redisClient: Redis | null = null;
 
@@ -28,7 +31,14 @@ async function checkInMemory(params: { key: string; limit: number; windowSec: nu
   const now = Date.now();
   const windowMs = params.windowSec * 1000;
   const from = now - windowMs;
-  const bucket = inMemoryBuckets.get(params.key) ?? { timestamps: [] };
+  
+  // Периодическая очистка старых бакетов
+  if (inMemoryBuckets.size > MAX_IN_MEMORY_BUCKETS || 
+      (inMemoryBuckets.size > 0 && Math.random() < 0.01)) { // 1% шанс очистки
+    cleanupStaleBuckets(now, windowMs);
+  }
+  
+  const bucket = inMemoryBuckets.get(params.key) ?? { timestamps: [], lastCleanup: now };
 
   bucket.timestamps = bucket.timestamps.filter((ts) => ts > from);
   if (bucket.timestamps.length >= params.limit) {
@@ -39,6 +49,15 @@ async function checkInMemory(params: { key: string; limit: number; windowSec: nu
   bucket.timestamps.push(now);
   inMemoryBuckets.set(params.key, bucket);
   return true;
+}
+
+function cleanupStaleBuckets(now: number, windowMs: number) {
+  const cutoff = now - windowMs;
+  for (const [key, bucket] of inMemoryBuckets.entries()) {
+    if (bucket.timestamps.length === 0 || bucket.timestamps[bucket.timestamps.length - 1] < cutoff) {
+      inMemoryBuckets.delete(key);
+    }
+  }
 }
 
 async function checkRedis(params: { key: string; limit: number; windowSec: number }) {
@@ -52,11 +71,17 @@ async function checkRedis(params: { key: string; limit: number; windowSec: numbe
       await client.connect();
     }
 
-    const count = await client.incr(params.key);
-    if (count === 1) {
-      await client.expire(params.key, params.windowSec);
+    // Атомарная операция через multi/exec для предотвращения race condition
+    const multi = client.multi();
+    multi.incr(params.key);
+    multi.expire(params.key, params.windowSec);
+    
+    const results = await multi.exec();
+    if (!results) {
+      return null;
     }
-
+    
+    const count = results[0][1] as number;
     return count <= params.limit;
   } catch {
     return null;

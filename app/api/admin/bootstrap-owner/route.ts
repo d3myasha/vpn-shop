@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
@@ -7,6 +8,12 @@ const bootstrapSchema = z.object({
   email: z.string().email(),
   token: z.string().min(8)
 });
+
+function secureCompare(a: string, b: string): boolean {
+  const hashA = createHash("sha256").update(a).digest();
+  const hashB = createHash("sha256").update(b).digest();
+  return timingSafeEqual(hashA, hashB);
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,7 +28,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "OWNER_BOOTSTRAP_TOKEN не задан в окружении" }, { status: 503 });
     }
 
-    if (parsed.data.token !== expectedToken) {
+    if (!secureCompare(parsed.data.token, expectedToken)) {
       return NextResponse.json({ error: "Неверный bootstrap token" }, { status: 401 });
     }
 
@@ -56,8 +63,7 @@ export async function POST(request: NextRequest) {
       role: "OWNER"
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Bootstrap error";
     logger.error("bootstrap_owner_failed", error, { route: "/api/admin/bootstrap-owner" });
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Ошибка выполнения bootstrap операции" }, { status: 500 });
   }
 }

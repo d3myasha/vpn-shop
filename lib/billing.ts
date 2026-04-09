@@ -160,11 +160,9 @@ export async function activatePaymentAndSubscription(params: {
     }
 
     if (payment.user.referredByUserId) {
-      const reward = await tx.referralReward.findFirst({
-        where: { paymentId: payment.id }
-      });
-
-      if (!reward) {
+      // Используем unique constraint для предотвращения race condition
+      // Вместо findFirst + create, используем create с onError для graceful handling
+      try {
         await tx.referralReward.create({
           data: {
             paymentId: payment.id,
@@ -177,9 +175,18 @@ export async function activatePaymentAndSubscription(params: {
 
         await extendUserLatestSubscription(tx, payment.user.id, params.invitedBonusDays);
         await extendUserLatestSubscription(tx, payment.user.referredByUserId, params.inviterBonusDays);
+      } catch (error) {
+        // Если reward уже существует (race condition), просто логируем и продолжаем
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+          // Unique constraint violation — значит reward уже создан другим запросом
+          return { paymentId: payment.id, subscriptionId: subscription.id, alreadyProcessed: false, referralSkipped: true };
+        }
+        throw error;
       }
     }
 
     return { paymentId: payment.id, subscriptionId: subscription.id, alreadyProcessed: false };
+  }, {
+    isolationLevel: "Serializable"
   });
 }

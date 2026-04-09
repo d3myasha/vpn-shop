@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { calculateDiscountRub, resolveCheckoutUser, validatePromoCode, BillingError } from "@/lib/billing";
 import { createYooKassaPayment } from "@/lib/yookassa";
@@ -6,17 +7,28 @@ import { auth } from "@/auth";
 import { logger } from "@/lib/logger";
 import { normalizeReferralCode, resolveReferralInviter } from "@/lib/users";
 
-type CheckoutInput = {
-  planCode?: string;
-  promoCode?: string;
-  referralCode?: string;
-};
+const checkoutInputSchema = z.object({
+  planCode: z.string().trim().min(1).max(64),
+  promoCode: z.string().trim().max(64).optional(),
+  referralCode: z.string().trim().max(32).optional(),
+});
 
-function getPublicOrigin(request: NextRequest) {
+const ALLOWED_HOSTS = new Set([
+  process.env.APP_DOMAIN,
+  process.env.NEXT_PUBLIC_APP_DOMAIN,
+].filter(Boolean));
+
+function getPublicOrigin(request: NextRequest): string {
   const forwardedHost = request.headers.get("x-forwarded-host");
   const forwardedProto = request.headers.get("x-forwarded-proto");
+
+  // Валидация x-forwarded-host для предотвращения Host Header Injection
   if (forwardedHost) {
-    const proto = forwardedProto ?? "https";
+    if (ALLOWED_HOSTS.size > 0 && !ALLOWED_HOSTS.has(forwardedHost)) {
+      logger.warn("host_header_injection_blocked", { forwardedHost, allowedHosts: [...ALLOWED_HOSTS] });
+      return request.nextUrl.origin;
+    }
+    const proto = forwardedProto === "http" || forwardedProto === "https" ? forwardedProto : "https";
     return `${proto}://${forwardedHost}`;
   }
 
@@ -26,26 +38,29 @@ function getPublicOrigin(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const checkoutEnabled = process.env.CHECKOUT_ENABLED !== "false";
   const contentType = request.headers.get("content-type") ?? "";
-
-  let input: CheckoutInput = {};
-  if (contentType.includes("application/x-www-form-urlencoded")) {
-    const formData = await request.formData();
-    input = {
-      planCode: String(formData.get("planCode") ?? ""),
-      promoCode: String(formData.get("promoCode") ?? ""),
-      referralCode: String(formData.get("referralCode") ?? "")
-    };
-  } else {
-    input = (await request.json()) as CheckoutInput;
-  }
-
-  const planCode = String(input.planCode ?? "").trim();
-  if (!planCode) {
-    return NextResponse.json({ error: "planCode is required" }, { status: 400 });
-  }
-
   const wantsRedirect = contentType.includes("application/x-www-form-urlencoded");
   const origin = getPublicOrigin(request);
+
+  let input: z.infer<typeof checkoutInputSchema>;
+  if (contentType.includes("application/x-www-form-urlencoded")) {
+    const formData = await request.formData();
+    const parseResult = checkoutInputSchema.safeParse({
+      planCode: formData.get("planCode") ?? "",
+      promoCode: formData.get("promoCode") ?? undefined,
+      referralCode: formData.get("referralCode") ?? undefined,
+    });
+    if (!parseResult.success) {
+      return NextResponse.json({ error: "Неверный формат запроса" }, { status: 400 });
+    }
+    input = parseResult.data;
+  } else {
+    const body = await request.json();
+    const parseResult = checkoutInputSchema.safeParse(body);
+    if (!parseResult.success) {
+      return NextResponse.json({ error: "Неверный формат запроса" }, { status: 400 });
+    }
+    input = parseResult.data;
+  }
 
   if (!checkoutEnabled) {
     if (wantsRedirect) {
@@ -56,7 +71,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const [plan, promo] = await Promise.all([
-      prisma.plan.findUnique({ where: { code: planCode } }),
+      prisma.plan.findUnique({ where: { code: input.planCode } }),
       validatePromoCode(input.promoCode)
     ]);
 
@@ -144,17 +159,16 @@ export async function POST(request: NextRequest) {
       confirmationUrl
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Checkout error";
     const statusCode = error instanceof BillingError ? error.statusCode : 500;
-    logger.error("checkout_failed", error, { statusCode, planCode, route: "/api/checkout" });
+    logger.error("checkout_failed", error, { statusCode, planCode: input.planCode, route: "/api/checkout" });
 
     if (wantsRedirect) {
       return NextResponse.redirect(
-        new URL(`/account?tab=subscription&error=${encodeURIComponent(message)}`, origin),
+        new URL(`/account?tab=subscription&error=${encodeURIComponent("Ошибка создания платежа")}`, origin),
         303
       );
     }
 
-    return NextResponse.json({ error: message }, { status: statusCode });
+    return NextResponse.json({ error: "Ошибка создания платежа" }, { status: statusCode });
   }
 }

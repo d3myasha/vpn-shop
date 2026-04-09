@@ -4,6 +4,7 @@ import { isEmailDomainAllowed } from "@/lib/email-policy";
 import { sendRegistrationVerificationCode } from "@/lib/email-verification";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const requestCodeSchema = z.object({
   email: z.string().email(),
@@ -12,6 +13,18 @@ const requestCodeSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting: 5 запросов в минуту на IP
+    const clientIp = request.headers.get("x-forwarded-for")?.split(",")[0] ?? "unknown";
+    const rateLimitKey = `rate-limit:register-request-code:${clientIp}`;
+    const isAllowed = await checkRateLimit({ key: rateLimitKey, limitPerMinute: 5 });
+    
+    if (!isAllowed) {
+      return NextResponse.json(
+        { error: "Слишком много запросов. Попробуйте позже" },
+        { status: 429 }
+      );
+    }
+
     const body = (await request.json()) as unknown;
     const parsed = requestCodeSchema.safeParse(body);
     if (!parsed.success) {
@@ -36,7 +49,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ exists: false, sent: true }, { status: 200 });
   } catch (error) {
     logger.error("request_register_code_failed", error, { route: "/api/register/request-code" });
-    const message = error instanceof Error ? error.message : "Ошибка отправки кода";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Ошибка отправки кода подтверждения" }, { status: 500 });
   }
 }
